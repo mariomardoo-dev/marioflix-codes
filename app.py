@@ -90,6 +90,9 @@ def proxy_fetch(path):
         # absoluta cinejoy-lankar -> var rot (gor att allt haller sig pa var doman)
         text = text.replace("https://cinejoy.to", "")
         text = text.replace("http://cinejoy.to", "")
+        # NYCKELN: ingen Referer skickas -> videon-CDN:en (nebula) svarar 200.
+        # Utan detta 404:ar den nar den ser var doman som Referer.
+        text = text.replace("<head>", '<head><meta name="referrer" content="no-referrer">', 1)
         # injicera stadaren (gommer cinejoy-marken)
         script = '<script src="/static/cleanup.js"></script>'
         if "</head>" in text:
