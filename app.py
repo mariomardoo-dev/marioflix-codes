@@ -92,6 +92,8 @@ def cinejoy_proxy(path=""):
         # absoluta cinejoy-lankar -> var proxy
         text = text.replace("https://cinejoy.to", PROXY_BASE)
         text = text.replace("http://cinejoy.to", PROXY_BASE)
+        # SvelteKit-router: sag att basen ar /cinejoy sa routes funkar
+        text = text.replace('base: ""', 'base: "/cinejoy"')
         # relativa lankar (/xxx) -> var proxy (men inte //, redan /cinejoy,
         # och inte vara egna sidor)
         text = re.sub(r'(["\'])/(?!/)(?!cinejoy)(?!static)(?!check)(?!admin)(?!apk)',
