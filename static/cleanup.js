@@ -85,5 +85,5 @@
     scheduled = true;
     setTimeout(function () { scheduled = false; clean(); }, 200);
   }
-  new MutationObserver(schedule).observe(document.documentElement, { childList: true, subtree: true });
+  new MutationObserver(schedule).observe(document.documentElement, { childList: true, subtree: true, characterData: true });
 })();
