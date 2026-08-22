@@ -9,7 +9,7 @@ import re
 import urllib.request
 
 import requests
-from flask import Flask, Response, jsonify, request, send_file
+from flask import Flask, Response, jsonify, redirect, request, send_file
 
 app = Flask(__name__)
 
@@ -62,11 +62,8 @@ def check():
     return jsonify({"ok": False, "reason": "upptagen"})
 
 
-@app.route(PROXY_BASE + "/", defaults={"path": ""})
-@app.route(PROXY_BASE + "/<path:path>")
-def cinejoy_proxy(path=""):
-    """Visar cinejoy genom var server - byter ut cinejoy-lankar och injicerar
-    stadaren sa inga cinejoy-marken syns."""
+def proxy_fetch(path):
+    """Hamta en sida/fil fran cinejoy och skriv om HTML (saker: bara attribut)."""
     url = CINEJOY + "/" + path
     try:
         resp = requests.get(url, timeout=30,
@@ -87,29 +84,47 @@ def cinejoy_proxy(path=""):
 
     ctype = resp.headers.get("Content-Type", "")
     body = resp.content
-    if "html" in ctype or "javascript" in ctype:
+    if "html" in ctype:
         text = body.decode("utf-8", errors="replace")
         # absoluta cinejoy-lankar -> var proxy
         text = text.replace("https://cinejoy.to", PROXY_BASE)
         text = text.replace("http://cinejoy.to", PROXY_BASE)
-        # SvelteKit-router: sag att basen ar /cinejoy sa routes funkar
+        # SvelteKit-router: basen ar /cinejoy sa routes funkar
         text = text.replace('base: ""', 'base: "/cinejoy"')
-        # relativa lankar (/xxx) -> var proxy (men inte //, redan /cinejoy,
-        # och inte vara egna sidor)
-        text = re.sub(r'(["\'])/(?!/)(?!cinejoy)(?!static)(?!check)(?!admin)(?!apk)',
-                      r"\1" + PROXY_BASE + r"/", text)
+        # attribut-varden (src="/, href="/) -> proxyn.
+        # Ror INTE inline JS/regex - darefor bara attribut.
+        text = re.sub(r'([\w-]+)="/(?!/)(?!cinejoy)', r'\1="' + PROXY_BASE + r'/', text)
         text = re.sub(r"url\(/(?!/)", "url(" + PROXY_BASE + "/", text)
-        if "html" in ctype:
-            script = '<script src="/static/cleanup.js"></script>'
-            if "</head>" in text:
-                text = text.replace("</head>", script + "</head>", 1)
-            elif "</body>" in text:
-                text = text.replace("</body>", script + "</body>", 1)
+        # injicera stadaren (gommer cinejoy-marken)
+        script = '<script src="/static/cleanup.js"></script>'
+        if "</head>" in text:
+            text = text.replace("</head>", script + "</head>", 1)
+        elif "</body>" in text:
+            text = text.replace("</body>", script + "</body>", 1)
         body = text.encode("utf-8")
 
     r = Response(body, status=resp.status_code)
     r.headers["Content-Type"] = ctype
     return r
+
+
+@app.route(PROXY_BASE + "/", defaults={"path": ""})
+@app.route(PROXY_BASE + "/<path:path>")
+def cinejoy_proxy(path=""):
+    """Visar cinejoy genom var server - byter ut cinejoy-lankar och injicerar
+    stadaren sa inga cinejoy-marken syns."""
+    return proxy_fetch(path)
+
+
+@app.route("/")
+def index():
+    return redirect(PROXY_BASE + "/")
+
+
+@app.route("/<path:path>")
+def catch_all(path):
+    """Allt annat (api, _app, manifest osv) skickas till cinejoy."""
+    return proxy_fetch(path)
 
 
 @app.route("/apk")
