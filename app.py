@@ -38,16 +38,11 @@ def set_codes_env(codes):
             return False
         sid = services[0]["service"]["id"]
 
-        # las nuvarande envVars och byt bara CODES
-        req = urllib.request.Request(
-            "https://api.render.com/v1/services/" + sid,
-            headers={"Authorization": "Bearer " + key},
-        )
-        with urllib.request.urlopen(req, timeout=15) as r:
-            current = json.loads(r.read().decode())
+        # las nuvarande envVars (Render doljer varden, sa bygg listan fran appens egna)
         env_vars = [
-            {"key": ev["envVar"]["key"], "value": ev["envVar"]["value"]}
-            for ev in current.get("envVars", [])
+            {"key": k, "value": os.environ.get(k, "")}
+            for k in (CODES_ENV, ADMIN_PW_ENV, RENDER_KEY_ENV)
+            if os.environ.get(k)
         ]
         for ev in env_vars:
             if ev["key"] == CODES_ENV:
