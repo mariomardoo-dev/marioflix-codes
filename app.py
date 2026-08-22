@@ -168,6 +168,27 @@ def sw_file():
                      mimetype="application/javascript")
 
 
+@app.route("/swtest")
+def swtest():
+    """Tillfallig testsida: visar om Service Worker funkar i webblasaren."""
+    return """<!doctype html><html><head><meta charset="utf-8"><title>SW-test</title></head>
+<body style="background:#121218;color:#fff;font-family:Arial;padding:30px">
+<h1>Service Worker test</h1>
+<div id="r">kollar...</div>
+<script>
+var r = document.getElementById('r');
+if (!('serviceWorker' in navigator)) {
+  r.textContent = 'INGEN SW (serviceWorker saknas i denna webblasare)';
+} else {
+  navigator.serviceWorker.register('/sw.js').then(function (reg) {
+    r.textContent = 'register OK. controller: ' + (navigator.serviceWorker.controller ? 'JA' : 'nej (reload kravs)');
+  }).catch(function (e) {
+    r.textContent = 'register FEL: ' + e.message;
+  });
+}
+</script></body></html>"""
+
+
 @app.route("/apk")
 def apk():
     """Serverar Android-appen - ren nedladdningslank utan namn i adressen."""
