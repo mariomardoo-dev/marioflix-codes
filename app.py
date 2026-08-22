@@ -100,7 +100,7 @@ def proxy_fetch(path):
         # (SW:en kor videon genom var server sa den spelas i appen)
         scripts = ('<script src="/static/cleanup.js"></script>'
                    '<script>if("serviceWorker" in navigator){'
-                   'navigator.serviceWorker.register("/static/sw.js").then(function(){'
+                   'navigator.serviceWorker.register("/sw.js").then(function(){'
                    'if(!navigator.serviceWorker.controller&&!sessionStorage.getItem("mf-sw")){'
                    'sessionStorage.setItem("mf-sw","1");location.reload();}});}</script>')
         if "</head>" in text:
@@ -159,6 +159,13 @@ def vproxy(url):
         r.headers["Content-Length"] = length
     r.headers["Accept-Ranges"] = "bytes"
     return r
+
+
+@app.route("/sw.js")
+def sw_file():
+    """Service Worker fran roten - scope blir / sa den styr alla sidor."""
+    return send_file(os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "sw.js"),
+                     mimetype="application/javascript")
 
 
 @app.route("/apk")
