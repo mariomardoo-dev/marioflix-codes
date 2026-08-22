@@ -6,7 +6,7 @@ import json
 import os
 import urllib.request
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_file
 
 app = Flask(__name__)
 
@@ -71,6 +71,15 @@ def set_codes_env(codes):
 def check():
     code = request.args.get("code", "").strip().lower()
     return jsonify({"ok": code in current_codes()})
+
+
+@app.route("/apk")
+def apk():
+    """Serverar Android-appen - ren nedladdningslank utan namn i adressen."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Marioflix.apk")
+    if not os.path.exists(path):
+        return "APK saknas", 404
+    return send_file(path, as_attachment=True, download_name="Marioflix.apk")
 
 
 @app.route("/admin")
