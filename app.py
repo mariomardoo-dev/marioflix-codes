@@ -96,12 +96,17 @@ def proxy_fetch(path):
         text = text.replace("http://nebula.bright67.online", "/vproxy/https://nebula.bright67.online")
         # no-referrer (skadar inte; vissa CDN:er svarar battre utan Referer)
         text = text.replace("<head>", '<head><meta name="referrer" content="no-referrer">', 1)
-        # injicera stadaren (gommer cinejoy-marken)
-        script = '<script src="/static/cleanup.js"></script>'
+        # injicera stadaren (gommer cinejoy-marken) + Service Worker
+        # (SW:en kor videon genom var server sa den spelas i appen)
+        scripts = ('<script src="/static/cleanup.js"></script>'
+                   '<script>if("serviceWorker" in navigator){'
+                   'navigator.serviceWorker.register("/static/sw.js").then(function(){'
+                   'if(!navigator.serviceWorker.controller&&!sessionStorage.getItem("mf-sw")){'
+                   'sessionStorage.setItem("mf-sw","1");location.reload();}});}</script>')
         if "</head>" in text:
-            text = text.replace("</head>", script + "</head>", 1)
+            text = text.replace("</head>", scripts + "</head>", 1)
         elif "</body>" in text:
-            text = text.replace("</body>", script + "</body>", 1)
+            text = text.replace("</body>", scripts + "</body>", 1)
         body = text.encode("utf-8")
 
     r = Response(body, status=resp.status_code)
