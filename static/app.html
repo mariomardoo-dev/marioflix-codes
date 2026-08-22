@@ -54,7 +54,7 @@
           if (d.ok) {
             err.style.color = '#6bff8b';
             err.textContent = 'Rätt kod! Öppnar filmerna...';
-            setTimeout(function () { window.location.href = 'https://cinejoy.to/'; }, 600);
+            setTimeout(function () { window.location.href = '/cinejoy/'; }, 600);
           } else if (d.reason === 'upptagen') {
             err.style.color = '#ff6b6b';
             err.textContent = 'Koden används redan på en annan enhet.';

@@ -1,17 +1,26 @@
 # Marioflix-koder - liten server som haller koderna.
 # Koderna ligger i codes.json (i repot) - admin-sidan andrar filen direkt.
 # En-kod-en-enhet: forsta enheten som loggar in med en kod binds till den.
+# /cinejoy = proxy som visar cinejoy rent (utan cinejoy-marken).
 # OBS: vid deploy las koderna fran repots codes.json, sa hall filen synkad.
 import json
 import os
+import re
 import urllib.request
 
-from flask import Flask, jsonify, request, send_file
+import requests
+from flask import Flask, Response, jsonify, request, send_file
 
 app = Flask(__name__)
 
 ADMIN_PW_ENV = "ADMIN_PW"
 CODES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "codes.json")
+
+# --- Proxy till cinejoy ---
+PROXY_BASE = "/cinejoy"
+CINEJOY = "https://cinejoy.to"
+UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+      "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
 
 
 def load_data():
@@ -51,6 +60,54 @@ def check():
     if prev == device:
         return jsonify({"ok": True})
     return jsonify({"ok": False, "reason": "upptagen"})
+
+
+@app.route(PROXY_BASE + "/", defaults={"path": ""})
+@app.route(PROXY_BASE + "/<path:path>")
+def cinejoy_proxy(path=""):
+    """Visar cinejoy genom var server - byter ut cinejoy-lankar och injicerar
+    stadaren sa inga cinejoy-marken syns."""
+    url = CINEJOY + "/" + path
+    try:
+        resp = requests.get(url, timeout=30,
+                            headers={"User-Agent": UA}, allow_redirects=False)
+    except Exception:
+        return "Kunde inte na cinejoy", 502
+
+    # redirects: skriv om Location sa vi stannar i proxyn
+    if resp.status_code in (301, 302, 303, 307, 308):
+        loc = resp.headers.get("Location", "")
+        if loc.startswith(CINEJOY):
+            loc = PROXY_BASE + loc[len(CINEJOY):]
+        elif loc.startswith("/") and not loc.startswith("//"):
+            loc = PROXY_BASE + loc
+        r = Response("", status=resp.status_code)
+        r.headers["Location"] = loc
+        return r
+
+    ctype = resp.headers.get("Content-Type", "")
+    body = resp.content
+    if "html" in ctype or "javascript" in ctype:
+        text = body.decode("utf-8", errors="replace")
+        # absoluta cinejoy-lankar -> var proxy
+        text = text.replace("https://cinejoy.to", PROXY_BASE)
+        text = text.replace("http://cinejoy.to", PROXY_BASE)
+        # relativa lankar (/xxx) -> var proxy (men inte //, redan /cinejoy,
+        # och inte vara egna sidor)
+        text = re.sub(r'(["\'])/(?!/)(?!cinejoy)(?!static)(?!check)(?!admin)(?!apk)',
+                      r"\1" + PROXY_BASE + r"/", text)
+        text = re.sub(r"url\(/(?!/)", "url(" + PROXY_BASE + "/", text)
+        if "html" in ctype:
+            script = '<script src="/static/cleanup.js"></script>'
+            if "</head>" in text:
+                text = text.replace("</head>", script + "</head>", 1)
+            elif "</body>" in text:
+                text = text.replace("</body>", script + "</body>", 1)
+        body = text.encode("utf-8")
+
+    r = Response(body, status=resp.status_code)
+    r.headers["Content-Type"] = ctype
+    return r
 
 
 @app.route("/apk")
