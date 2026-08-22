@@ -63,21 +63,22 @@ def check():
 
 
 def proxy_fetch(path):
-    """Hamta en sida/fil fran cinejoy och skriv om HTML (saker: bara attribut)."""
-    url = CINEJOY + "/" + path
+    """Hamta en sida/fil fran cinejoy. Allt serveras fran var rot sa sajtens
+    egna lankar (api, _app, routes) funkar utan omskrivning."""
+    url = CINEJOY + "/" + path if path else CINEJOY + "/"
     try:
         resp = requests.get(url, timeout=30,
                             headers={"User-Agent": UA}, allow_redirects=False)
     except Exception:
         return "Kunde inte na cinejoy", 502
 
-    # redirects: skriv om Location sa vi stannar i proxyn
+    # redirects: rota om till var doman (samma sokkvag) - ingen loop
     if resp.status_code in (301, 302, 303, 307, 308):
         loc = resp.headers.get("Location", "")
         if loc.startswith(CINEJOY):
-            loc = PROXY_BASE + loc[len(CINEJOY):]
-        elif loc.startswith("/") and not loc.startswith("//"):
-            loc = PROXY_BASE + loc
+            loc = loc[len(CINEJOY):] or "/"
+        elif loc.startswith("//"):
+            loc = "https:" + loc
         r = Response("", status=resp.status_code)
         r.headers["Location"] = loc
         return r
@@ -86,15 +87,9 @@ def proxy_fetch(path):
     body = resp.content
     if "html" in ctype:
         text = body.decode("utf-8", errors="replace")
-        # absoluta cinejoy-lankar -> var proxy
-        text = text.replace("https://cinejoy.to", PROXY_BASE)
-        text = text.replace("http://cinejoy.to", PROXY_BASE)
-        # SvelteKit-router: basen ar /cinejoy sa routes funkar
-        text = text.replace('base: ""', 'base: "/cinejoy"')
-        # attribut-varden (src="/, href="/) -> proxyn.
-        # Ror INTE inline JS/regex - darefor bara attribut.
-        text = re.sub(r'([\w-]+)="/(?!/)(?!cinejoy)', r'\1="' + PROXY_BASE + r'/', text)
-        text = re.sub(r"url\(/(?!/)", "url(" + PROXY_BASE + "/", text)
+        # absoluta cinejoy-lankar -> var rot (gor att allt haller sig pa var doman)
+        text = text.replace("https://cinejoy.to", "")
+        text = text.replace("http://cinejoy.to", "")
         # injicera stadaren (gommer cinejoy-marken)
         script = '<script src="/static/cleanup.js"></script>'
         if "</head>" in text:
@@ -108,22 +103,15 @@ def proxy_fetch(path):
     return r
 
 
-@app.route(PROXY_BASE + "/", defaults={"path": ""})
-@app.route(PROXY_BASE + "/<path:path>")
-def cinejoy_proxy(path=""):
-    """Visar cinejoy genom var server - byter ut cinejoy-lankar och injicerar
-    stadaren sa inga cinejoy-marken syns."""
-    return proxy_fetch(path)
-
-
 @app.route("/")
 def index():
-    return redirect(PROXY_BASE + "/")
+    """Roten = cinejoy (rent, genom proxyn)."""
+    return proxy_fetch("")
 
 
 @app.route("/<path:path>")
 def catch_all(path):
-    """Allt annat (api, _app, manifest osv) skickas till cinejoy."""
+    """Allt annat (api, _app, routes, manifest osv) skickas till cinejoy."""
     return proxy_fetch(path)
 
 
