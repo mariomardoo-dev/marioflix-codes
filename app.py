@@ -85,20 +85,23 @@ def proxy_fetch(path):
 
     ctype = resp.headers.get("Content-Type", "")
     body = resp.content
-    if "html" in ctype:
+    if "html" in ctype or "json" in ctype or "javascript" in ctype:
         text = body.decode("utf-8", errors="replace")
         # absoluta cinejoy-lankar -> var rot (gor att allt haller sig pa var doman)
         text = text.replace("https://cinejoy.to", "")
         text = text.replace("http://cinejoy.to", "")
+        # VIDEO: ström-URL:er (nebula-CDN) -> var /vproxy sa Origin-blocket kringgas.
+        # Server-till-server skickar ingen Origin -> CDN:en svarar 200.
+        text = text.replace("https://nebula.bright67.online", "/vproxy/https://nebula.bright67.online")
+        text = text.replace("http://nebula.bright67.online", "/vproxy/https://nebula.bright67.online")
         # no-referrer (skadar inte; vissa CDN:er svarar battre utan Referer)
         text = text.replace("<head>", '<head><meta name="referrer" content="no-referrer">', 1)
-        # injicera stadaren (gommer cinejoy-marken) + play-vidarelogiken
-        scripts = ('<script src="/static/cleanup.js"></script>'
-                   '<script src="/static/playforward.js"></script>')
+        # injicera stadaren (gommer cinejoy-marken)
+        script = '<script src="/static/cleanup.js"></script>'
         if "</head>" in text:
-            text = text.replace("</head>", scripts + "</head>", 1)
+            text = text.replace("</head>", script + "</head>", 1)
         elif "</body>" in text:
-            text = text.replace("</body>", scripts + "</body>", 1)
+            text = text.replace("</body>", script + "</body>", 1)
         body = text.encode("utf-8")
 
     r = Response(body, status=resp.status_code)
@@ -116,6 +119,41 @@ def index():
 def catch_all(path):
     """Allt annat (api, _app, routes, manifest osv) skickas till cinejoy."""
     return proxy_fetch(path)
+
+
+@app.route("/vproxy/<path:url>")
+def vproxy(url):
+    """Streamar videon (nebula-CDN) server-till-server - inget Origin skickas,
+    sa CDN:en svarar 200. m3u8:er skrivs om sa segmenten ocksa gar via oss."""
+    try:
+        upstream = requests.get(url, timeout=60,
+                                headers={"User-Agent": UA}, stream=True, allow_redirects=True)
+    except Exception:
+        return "Streamfel", 502
+    if upstream.status_code != 200:
+        return "Streamfel", upstream.status_code
+    ctype = upstream.headers.get("Content-Type", "")
+    if "mpegurl" in ctype or url.endswith(".m3u8"):
+        base = url[:url.rfind("/") + 1]
+        body = upstream.content.decode("utf-8", errors="replace")
+        lines = []
+        for line in body.splitlines():
+            if line and not line.startswith("#"):
+                if line.startswith("http"):
+                    line = "/vproxy/" + line
+                elif line.startswith("/"):
+                    line = "/vproxy/https://nebula.bright67.online" + line
+                else:
+                    line = "/vproxy/" + base + line
+            lines.append(line)
+        return Response("\n".join(lines), content_type="application/vnd.apple.mpegurl")
+    r = Response(upstream.iter_content(chunk_size=65536),
+                 content_type=ctype or "application/octet-stream")
+    length = upstream.headers.get("Content-Length")
+    if length:
+        r.headers["Content-Length"] = length
+    r.headers["Accept-Ranges"] = "bytes"
+    return r
 
 
 @app.route("/apk")
