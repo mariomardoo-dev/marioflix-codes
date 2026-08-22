@@ -1,7 +1,6 @@
 # Marioflix-koder - liten server som haller koderna.
-# Koderna ligger i Render-miljovariabeln CODES (t.ex. "m,1") - andras i Render
-# dashboard eller via admin-sidan. Inga koder finns i koden eller i repot.
-import base64
+# Koderna ligger i codes.json (i repot) - admin-sidan andrar filen direkt.
+# OBS: vid deploy las koderna fran repots codes.json, sa hall filen synkad.
 import json
 import os
 import urllib.request
@@ -10,67 +9,28 @@ from flask import Flask, jsonify, request, send_file
 
 app = Flask(__name__)
 
-CODES_ENV = "CODES"  # komma-separerade koder, t.ex. "m,1"
 ADMIN_PW_ENV = "ADMIN_PW"
-RENDER_KEY_ENV = "RENDER_API_KEY"
-SERVICE_NAME = "marioflix-codes"
+CODES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "codes.json")
 
 
-def current_codes():
-    raw = os.environ.get(CODES_ENV, "").strip()
-    return [c.strip().lower() for c in raw.split(",") if c.strip()]
-
-
-def set_codes_env(codes):
-    """Uppdatera CODES-miljovariabeln pa Render-tjansten via Render API."""
-    key = os.environ.get(RENDER_KEY_ENV, "")
-    if not key:
-        return False
+def load_codes():
     try:
-        # hitta service-id genom att lista tjansterna
-        req = urllib.request.Request(
-            "https://api.render.com/v1/services?name=" + SERVICE_NAME,
-            headers={"Authorization": "Bearer " + key},
-        )
-        with urllib.request.urlopen(req, timeout=15) as r:
-            services = json.loads(r.read().decode())
-        if not services:
-            return False
-        sid = services[0]["service"]["id"]
-
-        # las nuvarande envVars (Render doljer varden, sa bygg listan fran appens egna)
-        env_vars = [
-            {"key": k, "value": os.environ.get(k, "")}
-            for k in (CODES_ENV, ADMIN_PW_ENV, RENDER_KEY_ENV)
-            if os.environ.get(k)
-        ]
-        for ev in env_vars:
-            if ev["key"] == CODES_ENV:
-                ev["value"] = ",".join(codes)
-                break
-        else:
-            env_vars.append({"key": CODES_ENV, "value": ",".join(codes)})
-
-        data = json.dumps({"envVars": env_vars}).encode()
-        req = urllib.request.Request(
-            "https://api.render.com/v1/services/" + sid,
-            data=data,
-            headers={
-                "Authorization": "Bearer " + key,
-                "Content-Type": "application/json",
-            },
-            method="PATCH",
-        )
-        with urllib.request.urlopen(req, timeout=15) as r:
-            return r.status in (200, 201)
+        with open(CODES_FILE, encoding="utf-8") as f:
+            return [c.lower() for c in json.load(f).get("codes", [])]
     except Exception:
-        return False
+        # fallback: gamla env-variabeln om filen saknas
+        return [c.strip().lower() for c in os.environ.get("CODES", "").split(",") if c.strip()]
+
+
+def save_codes(codes):
+    with open(CODES_FILE, "w", encoding="utf-8") as f:
+        json.dump({"codes": codes}, f, indent=2)
 
 
 @app.route("/check")
 def check():
     code = request.args.get("code", "").strip().lower()
-    return jsonify({"ok": code in current_codes()})
+    return jsonify({"ok": code in load_codes()})
 
 
 @app.route("/apk")
@@ -88,23 +48,21 @@ def admin():
         return "Fel losenord.", 401
 
     msg = ""
-    codes = current_codes()
+    codes = load_codes()
     add = request.args.get("add")
     remove = request.args.get("remove")
     if add is not None:
         add = add.strip().lower()
         if add and add not in codes:
             codes.append(add)
-            os.environ[CODES_ENV] = ",".join(codes)  # galler direkt
-            pushed = set_codes_env(codes)
-            msg = "Kod '" + add + "' tillagd." + ("" if pushed else " (OBS: kunde inte spara pa Render - anvand dashboard for permanenta andringar)")
+            save_codes(codes)
+            msg = "Kod '" + add + "' tillagd."
         else:
             msg = "Koden finns redan (eller tom)."
     elif remove is not None:
         remove = remove.strip().lower()
         codes = [c for c in codes if c != remove]
-        os.environ[CODES_ENV] = ",".join(codes)
-        set_codes_env(codes)
+        save_codes(codes)
         msg = "Kod '" + remove + "' borttagen."
 
     rows = "".join(
