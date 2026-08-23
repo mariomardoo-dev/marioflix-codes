@@ -29,24 +29,24 @@ def load_data():
     try:
         with open(CODES_FILE, encoding="utf-8") as f:
             d = json.load(f)
-            return d.get("codes", []), d.get("used", {})
+            return d.get("codes", []), d.get("used", {}), d.get("notes", {})
     except Exception:
-        return [], {}
+        return [], {}, {}
 
 
-def save_data(codes, used):
+def save_data(codes, used, notes):
     with open(CODES_FILE, "w", encoding="utf-8") as f:
-        json.dump({"codes": codes, "used": used}, f, indent=2)
+        json.dump({"codes": codes, "used": used, "notes": notes}, f, indent=2)
 
 
-def push_to_github(codes, used):
+def push_to_github(codes, used, notes):
     """Committar kodfilen till repot - da overlever koderna alla deployar."""
     token = os.environ.get("GITHUB_TOKEN", "")
     if not token:
         return False
     try:
         url = "https://api.github.com/repos/mariomardoo-dev/marioflix-codes/contents/codes.json"
-        body = json.dumps({"codes": codes, "used": used}, indent=2)
+        body = json.dumps({"codes": codes, "used": used, "notes": notes}, indent=2)
         req = urllib.request.Request(
             url,
             headers={"Authorization": "token " + token, "User-Agent": "Marioflix",
@@ -79,7 +79,7 @@ def load_codes():
 def check():
     code = request.args.get("code", "").strip().lower()
     device = request.args.get("device", "").strip()
-    codes, used = load_data()
+    codes, used, _notes = load_data()
     if code not in codes:
         return jsonify({"ok": False, "reason": "fel"})
     if not device:
@@ -89,7 +89,7 @@ def check():
     if prev is None:
         # forsta gangen: binda koden till denna enhet
         used[code] = device
-        save_data(codes, used)
+        save_data(codes, used, _notes)
         return jsonify({"ok": True, "first": True})
     if prev == device:
         return jsonify({"ok": True})
@@ -226,17 +226,19 @@ def admin():
         return "Fel losenord.", 401
 
     msg = ""
-    codes, used = load_data()
+    codes, used, notes = load_data()
     add = request.args.get("add")
     remove = request.args.get("remove")
     release = request.args.get("release")
+    note_code = request.args.get("note_code")
+    note_value = request.args.get("note_value", "").strip()
     saved_note = ""
     if add is not None:
         add = add.strip().lower()
         if add and add not in codes:
             codes.append(add)
-            save_data(codes, used)
-            saved_note = " (sparat permanent)" if push_to_github(codes, used) else " (OBS: sparat tills nasta uppdatering - lagg till GITHUB_TOKEN i Render)"
+            save_data(codes, used, notes)
+            saved_note = " (sparat permanent)" if push_to_github(codes, used, notes) else " (OBS: sparat tills nasta uppdatering - lagg till GITHUB_TOKEN i Render)"
             msg = "Kod '" + add + "' tillagd." + saved_note
         else:
             msg = "Koden finns redan (eller tom)."
@@ -244,27 +246,41 @@ def admin():
         remove = remove.strip().lower()
         codes = [c for c in codes if c != remove]
         used.pop(remove, None)
-        save_data(codes, used)
-        push_to_github(codes, used)
+        notes.pop(remove, None)
+        save_data(codes, used, notes)
+        push_to_github(codes, used, notes)
         msg = "Kod '" + remove + "' borttagen."
     elif release is not None:
         release = release.strip().lower()
         used.pop(release, None)
-        save_data(codes, used)
-        push_to_github(codes, used)
+        save_data(codes, used, notes)
+        push_to_github(codes, used, notes)
         msg = "Kod '" + release + "' frigjord - kan anvandas pa ny enhet."
+    elif note_code is not None:
+        note_code = note_code.strip().lower()
+        if note_value:
+            notes[note_code] = note_value
+        else:
+            notes.pop(note_code, None)
+        save_data(codes, used, notes)
+        pushed = push_to_github(codes, used, notes)
+        msg = "Notis sparad for '" + note_code + "'." + (" (permanent)" if pushed else " (OBS: sparas tills nasta uppdatering)")
 
     pw = request.args.get("pw", "")
     rows = ""
     for c in codes:
         dev = used.get(c)
+        note = notes.get(c, "")
         if dev:
             rows += ("<tr><td>" + c + "</td><td style='color:#888'>upptagen</td>"
+                     + "<td>" + note + "</td>"
                      + "<td><a href='/admin?pw=" + pw + "&release=" + c + "'>slapp</a> "
                      + "<a href='/admin?pw=" + pw + "&remove=" + c + "'>ta bort</a></td></tr>")
         else:
             rows += ("<tr><td>" + c + "</td><td style='color:#6bff8b'>ledig</td>"
+                     + "<td>" + note + "</td>"
                      + "<td><a href='/admin?pw=" + pw + "&remove=" + c + "'>ta bort</a></td></tr>")
+    options = "".join("<option value='" + c + "'>" + c + "</option>" for c in codes)
     html = """<!doctype html><html><head><meta charset="utf-8"><title>Marioflix koder</title>
 <style>body{font-family:Roboto,Arial,sans-serif;background:#121218;color:#fff;padding:30px;max-width:500px;margin:auto}
 h1{color:#e52020}table{border-collapse:collapse;width:100%}td{padding:8px;border-bottom:1px solid #333}
@@ -277,8 +293,13 @@ button{background:#e52020;color:#fff;border:0;padding:10px 20px;border-radius:99
 <h3>Lagg till kod</h3>
 <form><input type="hidden" name="pw" value="__PW__"><input name="add" placeholder="Ny kod">
 <button type="submit">Lagg till</button></form>
+<h3>Notis till kod (vem ar vem?)</h3>
+<form><input type="hidden" name="pw" value="__PW__">
+<select name="note_code" style="background:#1e1e28;border:1px solid #333;color:#fff;padding:10px;border-radius:8px">__OPTIONS__</select>
+<input name="note_value" placeholder="t.ex. Romeo">
+<button type="submit">Spara notis</button></form>
 </body></html>"""
-    return html.replace("__MSG__", msg).replace("__ROWS__", rows).replace("__PW__", request.args.get("pw", ""))
+    return html.replace("__MSG__", msg).replace("__ROWS__", rows).replace("__PW__", request.args.get("pw", "")).replace("__OPTIONS__", options)
 
 
 if __name__ == "__main__":
