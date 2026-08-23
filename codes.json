@@ -8,10 +8,13 @@
     "richie",
     "test",
     "adrianzazi",
-    "mikael10"
+    "mikael10",
+    "testmednotis"
   ],
   "used": {
     "adrianzazi": "bbb981bc-a0f8-42d4-a948-d9b517328e20"
   },
-  "notes": {}
+  "notes": {
+    "testmednotis": "Tester"
+  }
 }
