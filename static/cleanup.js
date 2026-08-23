@@ -75,6 +75,14 @@
         el.style.display = 'none';
       }
     });
+
+    // 10. Ta bort "installera/ladda ner appen"-banderoller
+    document.querySelectorAll('div, section, aside, span, button, a, p, h1, h2, h3').forEach(function (el) {
+      var t = (el.textContent || '').trim();
+      if (t.length < 160 && /install.{0,25}app|app.{0,25}install|download.{0,12}app|get the app/i.test(t)) {
+        el.style.display = 'none';
+      }
+    });
   }
 
   clean();
