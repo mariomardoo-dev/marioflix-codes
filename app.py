@@ -1,8 +1,10 @@
 # Marioflix-koder - liten server som haller koderna.
-# Koderna ligger i codes.json (i repot) - admin-sidan andrar filen direkt.
+# Koderna ligger i codes.json (i repot) - admin-sidan andrar filen direkt
+# och committar den till GitHub sa koderna overlever alla uppdateringar.
 # En-kod-en-enhet: forsta enheten som loggar in med en kod binds till den.
 # /cinejoy = proxy som visar cinejoy rent (utan cinejoy-marken).
-# OBS: vid deploy las koderna fran repots codes.json, sa hall filen synkad.
+# OBS: kraver GITHUB_TOKEN i Render-miljon for permanent sparande.
+import base64
 import json
 import os
 import re
@@ -35,6 +37,38 @@ def load_data():
 def save_data(codes, used):
     with open(CODES_FILE, "w", encoding="utf-8") as f:
         json.dump({"codes": codes, "used": used}, f, indent=2)
+
+
+def push_to_github(codes, used):
+    """Committar kodfilen till repot - da overlever koderna alla deployar."""
+    token = os.environ.get("GITHUB_TOKEN", "")
+    if not token:
+        return False
+    try:
+        url = "https://api.github.com/repos/mariomardoo-dev/marioflix-codes/contents/codes.json"
+        body = json.dumps({"codes": codes, "used": used}, indent=2)
+        req = urllib.request.Request(
+            url,
+            headers={"Authorization": "token " + token, "User-Agent": "Marioflix",
+                     "Accept": "application/vnd.github+json"},
+        )
+        with urllib.request.urlopen(req, timeout=15) as r:
+            old = json.loads(r.read().decode())
+        data = json.dumps({
+            "message": "koder uppdaterade fran admin",
+            "content": base64.b64encode(body.encode()).decode(),
+            "sha": old["sha"],
+        }).encode()
+        req2 = urllib.request.Request(
+            url, data=data,
+            headers={"Authorization": "token " + token, "User-Agent": "Marioflix",
+                     "Accept": "application/vnd.github+json"},
+            method="PUT",
+        )
+        with urllib.request.urlopen(req2, timeout=15) as r2:
+            return r2.status in (200, 201)
+    except Exception:
+        return False
 
 
 def load_codes():
@@ -196,12 +230,14 @@ def admin():
     add = request.args.get("add")
     remove = request.args.get("remove")
     release = request.args.get("release")
+    saved_note = ""
     if add is not None:
         add = add.strip().lower()
         if add and add not in codes:
             codes.append(add)
             save_data(codes, used)
-            msg = "Kod '" + add + "' tillagd."
+            saved_note = " (sparat permanent)" if push_to_github(codes, used) else " (OBS: sparat tills nasta uppdatering - lagg till GITHUB_TOKEN i Render)"
+            msg = "Kod '" + add + "' tillagd." + saved_note
         else:
             msg = "Koden finns redan (eller tom)."
     elif remove is not None:
@@ -209,11 +245,13 @@ def admin():
         codes = [c for c in codes if c != remove]
         used.pop(remove, None)
         save_data(codes, used)
+        push_to_github(codes, used)
         msg = "Kod '" + remove + "' borttagen."
     elif release is not None:
         release = release.strip().lower()
         used.pop(release, None)
         save_data(codes, used)
+        push_to_github(codes, used)
         msg = "Kod '" + release + "' frigjord - kan anvandas pa ny enhet."
 
     pw = request.args.get("pw", "")
