@@ -21,7 +21,10 @@ if changed:
     subprocess.run(["git", "-c", "user.name=mariomardoo-dev",
                     "-c", "user.email=mariomardoo-dev@users.noreply.github.com",
                     "commit", "-m", "synk: live-koder till repot"], cwd=REPO, check=True)
-    subprocess.run(["git", "push"], cwd=REPO, check=True)
+# hamta in andras commits (auto-commits fran admin) innan push
+subprocess.run(["git", "pull", "--rebase"], cwd=REPO, check=True)
+subprocess.run(["git", "push"], cwd=REPO, check=True)
+if changed:
     print("SYNKAT OCH PUSHAT:", data["codes"])
 else:
     print("Inga andringar - redan synkat.")

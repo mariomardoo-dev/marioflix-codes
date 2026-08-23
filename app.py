@@ -232,14 +232,17 @@ def admin():
     release = request.args.get("release")
     note_code = request.args.get("note_code")
     note_value = request.args.get("note_value", "").strip()
+    add_note = request.args.get("note", "").strip()  # notis i samma steg som ny kod
     saved_note = ""
     if add is not None:
         add = add.strip().lower()
         if add and add not in codes:
             codes.append(add)
+            if add_note:
+                notes[add] = add_note
             save_data(codes, used, notes)
             saved_note = " (sparat permanent)" if push_to_github(codes, used, notes) else " (OBS: sparat tills nasta uppdatering - lagg till GITHUB_TOKEN i Render)"
-            msg = "Kod '" + add + "' tillagd." + saved_note
+            msg = "Kod '" + add + "' tillagd" + (" med notis." if add_note else ".") + saved_note
         else:
             msg = "Koden finns redan (eller tom)."
     elif remove is not None:
@@ -290,8 +293,9 @@ button{background:#e52020;color:#fff;border:0;padding:10px 20px;border-radius:99
 <h1>Marioflix koder</h1>
 <div class="msg">__MSG__</div>
 <table>__ROWS__</table>
-<h3>Lagg till kod</h3>
+<h3>Lagg till kod (med notis)</h3>
 <form><input type="hidden" name="pw" value="__PW__"><input name="add" placeholder="Ny kod">
+<input name="note" placeholder="Vem? (t.ex. Romeo)">
 <button type="submit">Lagg till</button></form>
 <h3>Notis till kod (vem ar vem?)</h3>
 <form><input type="hidden" name="pw" value="__PW__">
