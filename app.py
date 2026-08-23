@@ -168,6 +168,15 @@ def sw_file():
                      mimetype="application/javascript")
 
 
+@app.route("/codes-raw")
+def codes_raw():
+    """Returnerar hela kodfilen (sakerhetskopia) - skydd med admin-losenord."""
+    if request.args.get("pw", "") != os.environ.get(ADMIN_PW_ENV, ""):
+        return "Fel losenord.", 401
+    with open(CODES_FILE, encoding="utf-8") as f:
+        return f.read(), 200, {"Content-Type": "application/json; charset=utf-8"}
+
+
 @app.route("/apk")
 def apk():
     """Serverar Android-appen - ren nedladdningslank utan namn i adressen."""
