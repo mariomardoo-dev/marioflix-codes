@@ -21,9 +21,12 @@ if changed:
     subprocess.run(["git", "-c", "user.name=mariomardoo-dev",
                     "-c", "user.email=mariomardoo-dev@users.noreply.github.com",
                     "commit", "-m", "synk: live-koder till repot"], cwd=REPO, check=True)
-# hamta in andras commits (auto-commits fran admin) innan push
+# hamta in andras commits (auto-commits fran admin) innan push.
+# stashar forst eventuella osparade andringar (t.ex. app.py) sa pull funkar.
+subprocess.run(["git", "stash", "--include-untracked"], cwd=REPO, check=False)
 subprocess.run(["git", "pull", "--rebase"], cwd=REPO, check=True)
 subprocess.run(["git", "push"], cwd=REPO, check=True)
+subprocess.run(["git", "stash", "pop"], cwd=REPO, check=False)
 if changed:
     print("SYNKAT OCH PUSHAT:", data["codes"])
 else:

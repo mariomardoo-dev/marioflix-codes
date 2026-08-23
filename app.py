@@ -295,12 +295,12 @@ button{background:#e52020;color:#fff;border:0;padding:10px 20px;border-radius:99
 <table>__ROWS__</table>
 <h3>Lagg till kod (med notis)</h3>
 <form><input type="hidden" name="pw" value="__PW__"><input name="add" placeholder="Ny kod">
-<input name="note" placeholder="Vem? (t.ex. Romeo)">
+<input name="note" placeholder="Vem? (t.ex. Mario)">
 <button type="submit">Lagg till</button></form>
 <h3>Notis till kod (vem ar vem?)</h3>
 <form><input type="hidden" name="pw" value="__PW__">
 <select name="note_code" style="background:#1e1e28;border:1px solid #333;color:#fff;padding:10px;border-radius:8px">__OPTIONS__</select>
-<input name="note_value" placeholder="t.ex. Romeo">
+<input name="note_value" placeholder="t.ex. Mario">
 <button type="submit">Spara notis</button></form>
 </body></html>"""
     return html.replace("__MSG__", msg).replace("__ROWS__", rows).replace("__PW__", request.args.get("pw", "")).replace("__OPTIONS__", options)
