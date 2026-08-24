@@ -175,9 +175,11 @@ def proxy_fetch(path):
         elif "</body>" in text:
             text = text.replace("</body>", scripts + "</body>", 1)
         # Cinejoy-namnet ar bannat - byt ut det dar cleanup.js inte nar
-        # (flik-titeln i html + PWA-manifestet som serveras som json).
+        # (titel + meta-taggar i html, PWA-manifestet som serveras som json).
         if "html" in ctype:
-            text = text.replace("<title>Cinejoy</title>", "<title>Marioflix</title>")
+            text = re.sub(r"(<title[^>]*>)[^<]*</title>", r"\1Marioflix</title>", text, flags=re.I)
+            text = re.sub(r'(<meta[^>]*content=")([^"]*)(")',
+                          lambda m: m.group(1) + m.group(2).replace("Cinejoy", "Marioflix") + m.group(3), text)
         elif "json" in ctype:
             text = text.replace("Cinejoy", "Marioflix")
         body = text.encode("utf-8")
