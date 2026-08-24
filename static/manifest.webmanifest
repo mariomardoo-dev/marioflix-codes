@@ -1,7 +1,7 @@
 {
   "name": "Marioflix",
   "short_name": "Marioflix",
-  "start_url": "/static/app.html",
+  "start_url": "/",
   "display": "standalone",
   "background_color": "#121218",
   "theme_color": "#121218",

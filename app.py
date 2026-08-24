@@ -122,7 +122,7 @@ def login_gate():
     # alltid oppet: inloggningssidan, admin, nedladdningar, video-streams
     if p.startswith("/static/") or p.startswith("/vproxy/"):
         return None
-    if p in ("/check", "/admin", "/codes-raw", "/apk", "/apk-tv", "/sw.js"):
+    if p in ("/check", "/admin", "/codes-raw", "/apk", "/apk-tv", "/sw.js", "/manifest.json"):
         return None
     if is_authed():
         return None
@@ -177,6 +177,11 @@ def proxy_fetch(path):
         # Cinejoy-namnet ar bannat - byt ut det dar cleanup.js inte nar
         # (titel + meta-taggar i html, PWA-manifestet som serveras som json).
         if "html" in ctype:
+            # PWA: tvinga VAR manifest (Marioflix + egen ikon) - cinejoys far aldrig synas
+            text = re.sub(r'<link[^>]*rel="manifest"[^>]*>',
+                          '<link rel="manifest" href="/static/manifest.webmanifest">', text, flags=re.I)
+            text = re.sub(r'<link[^>]*rel="apple-touch-icon"[^>]*>',
+                          '<link rel="apple-touch-icon" href="/static/icon-192.png">', text, flags=re.I)
             text = re.sub(r"(<title[^>]*>)[^<]*</title>", r"\1Marioflix</title>", text, flags=re.I)
             text = re.sub(r'(<meta[^>]*content=")([^"]*)(")',
                           lambda m: m.group(1) + m.group(2).replace("Cinejoy", "Marioflix") + m.group(3), text)
@@ -193,6 +198,14 @@ def proxy_fetch(path):
 def index():
     """Roten = cinejoy (rent, genom proxyn)."""
     return proxy_fetch("")
+
+
+@app.route("/manifest.json")
+def manifest_json():
+    """Var egen PWA-manifest (Marioflix + egen ikon) - cinejoys manifest visas aldrig."""
+    return send_file(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                  "static", "manifest.webmanifest"),
+                     mimetype="application/manifest+json")
 
 
 @app.route("/<path:path>")
