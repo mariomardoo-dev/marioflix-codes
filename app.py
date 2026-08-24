@@ -122,7 +122,7 @@ def login_gate():
     # alltid oppet: inloggningssidan, admin, nedladdningar, video-streams
     if p.startswith("/static/") or p.startswith("/vproxy/"):
         return None
-    if p in ("/check", "/admin", "/codes-raw", "/apk", "/apk-tv", "/sw.js", "/manifest.json"):
+    if p in ("/check", "/admin", "/codes-raw", "/apk", "/apk-tv", "/sw.js", "/manifest.json", "/download-tv"):
         return None
     if is_authed():
         return None
@@ -198,6 +198,14 @@ def proxy_fetch(path):
 def index():
     """Roten = cinejoy (rent, genom proxyn)."""
     return proxy_fetch("")
+
+
+@app.route("/download-tv")
+def download_tv():
+    """Kodskydd for TV-apps-nedladdning (fore inloggning): ratt kod -> ok, sedan /apk-tv."""
+    if request.args.get("code", "").strip().lower() == "m123":
+        return jsonify({"ok": True})
+    return jsonify({"ok": False}), 401
 
 
 @app.route("/manifest.json")

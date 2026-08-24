@@ -66,6 +66,14 @@
       <button onclick="tryLogin()">Logga in</button>
       <div class="err" id="err"></div>
     </div>
+    <div class="dl" style="width:100%;text-align:center;margin-top:8px">
+      <p class="tag" style="margin:0 0 10px">📥 Ladda ner TV-appen</p>
+      <div>
+        <input id="dlcode" type="password" placeholder="Kod" style="width:160px">
+        <button onclick="tryDownload()" style="width:auto;padding:12px 24px">Ladda ner</button>
+      </div>
+      <div class="err" id="dl-err"></div>
+    </div>
   </div>
   <script>
     function deviceId() {
@@ -118,6 +126,32 @@
     }
     document.getElementById('code').addEventListener('keydown', function (e) {
       if (e.key === 'Enter') tryLogin();
+    });
+
+    function tryDownload() {
+      var code = document.getElementById('dlcode').value.trim();
+      var err = document.getElementById('dl-err');
+      if (!code) return;
+      err.style.color = '#888';
+      err.textContent = 'Kollar koden...';
+      fetch('/download-tv?code=' + encodeURIComponent(code))
+        .then(function (r) {
+          if (r.ok) {
+            err.style.color = '#6bff8b';
+            err.textContent = 'Rätt kod! Laddar ner...';
+            window.location.href = '/apk-tv';
+          } else {
+            err.style.color = '#ff6b6b';
+            err.textContent = 'Fel kod, försök igen.';
+          }
+        })
+        .catch(function () {
+          err.style.color = '#ff6b6b';
+          err.textContent = 'Kunde inte nå servern. Försök igen.';
+        });
+    }
+    document.getElementById('dlcode').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') tryDownload();
     });
   </script>
 </body>
