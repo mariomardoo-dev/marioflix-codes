@@ -170,7 +170,7 @@ def login_gate():
     # alltid oppet: inloggningssidan, admin, nedladdningar, video-streams
     if p.startswith("/static/") or p.startswith("/vproxy/"):
         return None
-    if p in ("/check", "/admin", "/codes-raw", "/apk", "/apk-tv", "/sw.js", "/manifest.json", "/download-tv", "/favicon.ico", "/account-info", "/logout"):
+    if p in ("/check", "/admin", "/codes-raw", "/apk", "/apk-tv", "/sw.js", "/manifest.json", "/download-tv", "/favicon.ico", "/account-info", "/logout", "/status"):
         return None
     if is_authed():
         return None
@@ -271,6 +271,25 @@ def download_tv():
     if request.args.get("code", "").strip().lower() == "m123":
         return jsonify({"ok": True})
     return jsonify({"ok": False}), 401
+
+
+@app.route("/status")
+def status():
+    """Bindningsstatus UTAN att binda (for apparnas utkastnings-koll):
+    fel=raderad, ledig=slappt, upptagen=annan enhet, bunden=min enhet."""
+    code = request.args.get("code", "").strip().lower()
+    device = request.args.get("device", "").strip()
+    codes, used, _notes = load_data()
+    if code not in codes:
+        return jsonify({"ok": False, "reason": "fel"})
+    if not device:
+        return jsonify({"ok": True, "reason": "medlem"})
+    prev = used.get(code)
+    if prev is None:
+        return jsonify({"ok": False, "reason": "ledig"})
+    if prev == device:
+        return jsonify({"ok": True, "reason": "bunden"})
+    return jsonify({"ok": False, "reason": "upptagen"})
 
 
 @app.route("/account-info")
