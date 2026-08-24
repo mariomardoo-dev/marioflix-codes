@@ -220,6 +220,15 @@ def apk():
     return send_file(path, as_attachment=True, download_name="Marioflix.apk")
 
 
+@app.route("/apk-tv")
+def apk_tv():
+    """Serverar TV-appen (Marioflix-Tv) - ren nedladdningslank."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Marioflix-Tv.apk")
+    if not os.path.exists(path):
+        return "APK saknas", 404
+    return send_file(path, as_attachment=True, download_name="Marioflix-Tv.apk")
+
+
 @app.route("/admin")
 def admin():
     if request.args.get("pw", "") != os.environ.get(ADMIN_PW_ENV, ""):
