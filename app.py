@@ -25,6 +25,37 @@ app = Flask(__name__)
 ADMIN_PW_ENV = "ADMIN_PW"
 CODES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "codes.json")
 
+GITHUB_REPO = "mariomardoo-dev/marioflix-codes"
+GITHUB_CODES_URL = "https://api.github.com/repos/" + GITHUB_REPO + "/contents/codes.json"
+
+
+def fetch_repo_codes():
+    """Vid VARJE start: hamta senaste codes.json fran GitHub (kallan till
+    sanningen). Render-atervinning tappar annars koder som lagts in efter
+    forra deployen - med denna hamtas alltid allt vid omstart."""
+    token = os.environ.get("GITHUB_TOKEN", "")
+    if not token:
+        return False
+    try:
+        req = urllib.request.Request(
+            GITHUB_CODES_URL,
+            headers={"Authorization": "token " + token, "User-Agent": "Marioflix"})
+        with urllib.request.urlopen(req, timeout=15) as r:
+            data = json.loads(r.read().decode("utf-8"))
+        content = base64.b64decode(data["content"]).decode("utf-8")
+        parsed = json.loads(content)
+        if isinstance(parsed, dict) and isinstance(parsed.get("codes"), list):
+            with open(CODES_FILE, "w", encoding="utf-8") as f:
+                f.write(content)
+            return True
+    except Exception:
+        pass
+    return False
+
+
+# Kor en gang vid start (Render startar om app.py vid varje boot/atervinning)
+fetch_repo_codes()
+
 # Laas for codes.json: admin och /check far ALDRIG skriva over varandra
 # (read-modify-write-race). flock over processer (Render/gunicorn) +
 # thread-lock som fallback (Windows/lokalt).
