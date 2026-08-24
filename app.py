@@ -8,15 +8,56 @@ import base64
 import json
 import os
 import re
+import threading
+import time
 import urllib.request
 
 import requests
 from flask import Flask, Response, jsonify, redirect, request, send_file
 
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
+
 app = Flask(__name__)
 
 ADMIN_PW_ENV = "ADMIN_PW"
 CODES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "codes.json")
+
+# Laas for codes.json: admin och /check far ALDRIG skriva over varandra
+# (read-modify-write-race). flock over processer (Render/gunicorn) +
+# thread-lock som fallback (Windows/lokalt).
+_codes_thread_lock = threading.Lock()
+_codes_lock_file = {"f": None}
+
+
+@app.before_request
+def codes_write_lock():
+    if request.path in ("/admin", "/check", "/codes-raw"):
+        _codes_thread_lock.acquire()
+        if fcntl is not None:
+            try:
+                f = open(CODES_FILE + ".lock", "w")
+                fcntl.flock(f, fcntl.LOCK_EX)
+                _codes_lock_file["f"] = f
+            except Exception:
+                _codes_lock_file["f"] = None
+
+
+@app.after_request
+def codes_write_unlock(resp):
+    if request.path in ("/admin", "/check", "/codes-raw"):
+        f = _codes_lock_file.get("f")
+        if f is not None:
+            try:
+                fcntl.flock(f, fcntl.LOCK_UN)
+                f.close()
+            except Exception:
+                pass
+            _codes_lock_file["f"] = None
+        _codes_thread_lock.release()
+    return resp
 
 # --- Proxy till cinejoy ---
 PROXY_BASE = "/cinejoy"
@@ -40,35 +81,41 @@ def save_data(codes, used, notes):
 
 
 def push_to_github(codes, used, notes):
-    """Committar kodfilen till repot - da overlever koderna alla deployar."""
+    """Committar kodfilen till repot - da overlever koderna alla deployar.
+    Retry 3 ggr med 2 s paus: GitHub contents-API:et kan visa gammal sha
+    direkt efter en commit (kand cache-lag) -> PUT 409 annars."""
     token = os.environ.get("GITHUB_TOKEN", "")
     if not token:
         return False
-    try:
-        url = "https://api.github.com/repos/mariomardoo-dev/marioflix-codes/contents/codes.json"
-        body = json.dumps({"codes": codes, "used": used, "notes": notes}, indent=2)
-        req = urllib.request.Request(
-            url,
-            headers={"Authorization": "token " + token, "User-Agent": "Marioflix",
-                     "Accept": "application/vnd.github+json"},
-        )
-        with urllib.request.urlopen(req, timeout=15) as r:
-            old = json.loads(r.read().decode())
-        data = json.dumps({
-            "message": "koder uppdaterade fran admin",
-            "content": base64.b64encode(body.encode()).decode(),
-            "sha": old["sha"],
-        }).encode()
-        req2 = urllib.request.Request(
-            url, data=data,
-            headers={"Authorization": "token " + token, "User-Agent": "Marioflix",
-                     "Accept": "application/vnd.github+json"},
-            method="PUT",
-        )
-        with urllib.request.urlopen(req2, timeout=15) as r2:
-            return r2.status in (200, 201)
-    except Exception:
-        return False
+    url = "https://api.github.com/repos/mariomardoo-dev/marioflix-codes/contents/codes.json"
+    body = json.dumps({"codes": codes, "used": used, "notes": notes}, indent=2)
+    for _attempt in range(3):
+        try:
+            req = urllib.request.Request(
+                url,
+                headers={"Authorization": "token " + token, "User-Agent": "Marioflix",
+                         "Accept": "application/vnd.github+json"},
+            )
+            with urllib.request.urlopen(req, timeout=15) as r:
+                old = json.loads(r.read().decode())
+            data = json.dumps({
+                "message": "koder uppdaterade fran admin",
+                "content": base64.b64encode(body.encode()).decode(),
+                "sha": old["sha"],
+            }).encode()
+            req2 = urllib.request.Request(
+                url, data=data,
+                headers={"Authorization": "token " + token, "User-Agent": "Marioflix",
+                         "Accept": "application/vnd.github+json"},
+                method="PUT",
+            )
+            with urllib.request.urlopen(req2, timeout=15) as r2:
+                if r2.status in (200, 201):
+                    return True
+        except Exception:
+            pass
+        time.sleep(2)
+    return False
 
 
 def load_codes():
