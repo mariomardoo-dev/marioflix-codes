@@ -90,10 +90,43 @@ def check():
         # forsta gangen: binda koden till denna enhet
         used[code] = device
         save_data(codes, used, _notes)
-        return jsonify({"ok": True, "first": True})
+        resp = jsonify({"ok": True, "first": True})
+        resp.set_cookie("mf_auth", code + "|" + device, httponly=True,
+                        samesite="Lax", max_age=60 * 60 * 24 * 30, path="/")
+        return resp
     if prev == device:
-        return jsonify({"ok": True})
+        resp = jsonify({"ok": True})
+        resp.set_cookie("mf_auth", code + "|" + device, httponly=True,
+                        samesite="Lax", max_age=60 * 60 * 24 * 30, path="/")
+        return resp
     return jsonify({"ok": False, "reason": "upptagen"})
+
+
+APP_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "app.html")
+
+
+def is_authed():
+    """Koll att besokaren loggat in med en kod som ar bunden till enheten."""
+    c = request.cookies.get("mf_auth", "")
+    if "|" not in c:
+        return False
+    code, device = c.split("|", 1)
+    codes, used, _notes = load_data()
+    return used.get(code) == device
+
+
+@app.before_request
+def login_gate():
+    """Inloggning framfor allt (som mobilen): streamingsidan kraver kod."""
+    p = request.path
+    # alltid oppet: inloggningssidan, admin, nedladdningar, video-streams
+    if p.startswith("/static/") or p.startswith("/vproxy/"):
+        return None
+    if p in ("/check", "/admin", "/codes-raw", "/apk", "/apk-tv", "/sw.js"):
+        return None
+    if is_authed():
+        return None
+    return send_file(APP_FILE)
 
 
 def proxy_fetch(path):
@@ -141,6 +174,12 @@ def proxy_fetch(path):
             text = text.replace("</head>", scripts + "</head>", 1)
         elif "</body>" in text:
             text = text.replace("</body>", scripts + "</body>", 1)
+        # Cinejoy-namnet ar bannat - byt ut det dar cleanup.js inte nar
+        # (flik-titeln i html + PWA-manifestet som serveras som json).
+        if "html" in ctype:
+            text = text.replace("<title>Cinejoy</title>", "<title>Marioflix</title>")
+        elif "json" in ctype:
+            text = text.replace("Cinejoy", "Marioflix")
         body = text.encode("utf-8")
 
     r = Response(body, status=resp.status_code)
