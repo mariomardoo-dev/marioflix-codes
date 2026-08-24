@@ -92,12 +92,12 @@ def check():
         save_data(codes, used, _notes)
         resp = jsonify({"ok": True, "first": True})
         resp.set_cookie("mf_auth", code + "|" + device, httponly=True,
-                        samesite="Lax", max_age=60 * 60 * 24 * 30, path="/")
+                        samesite="Lax", max_age=60 * 60 * 24 * 365 * 10, path="/")
         return resp
     if prev == device:
         resp = jsonify({"ok": True})
         resp.set_cookie("mf_auth", code + "|" + device, httponly=True,
-                        samesite="Lax", max_age=60 * 60 * 24 * 30, path="/")
+                        samesite="Lax", max_age=60 * 60 * 24 * 365 * 10, path="/")
         return resp
     return jsonify({"ok": False, "reason": "upptagen"})
 
@@ -122,11 +122,23 @@ def login_gate():
     # alltid oppet: inloggningssidan, admin, nedladdningar, video-streams
     if p.startswith("/static/") or p.startswith("/vproxy/"):
         return None
-    if p in ("/check", "/admin", "/codes-raw", "/apk", "/apk-tv", "/sw.js", "/manifest.json", "/download-tv", "/favicon.ico"):
+    if p in ("/check", "/admin", "/codes-raw", "/apk", "/apk-tv", "/sw.js", "/manifest.json", "/download-tv", "/favicon.ico", "/account-info", "/logout"):
         return None
     if is_authed():
         return None
     return send_file(APP_FILE)
+
+
+@app.after_request
+def extend_session(resp):
+    """Alltid inloggad (24/7): fornya cookien vid varje besok tills man loggar ut."""
+    if request.path == "/logout":
+        return resp
+    c = request.cookies.get("mf_auth", "")
+    if c and "|" in c and resp.status_code < 400:
+        resp.set_cookie("mf_auth", c, httponly=True, samesite="Lax",
+                        max_age=60 * 60 * 24 * 365 * 10, path="/")
+    return resp
 
 
 def proxy_fetch(path):
@@ -166,6 +178,7 @@ def proxy_fetch(path):
         # injicera stadaren (gommer cinejoy-marken) + Service Worker
         # (SW:en kor videon genom var server sa den spelas i appen)
         scripts = ('<script src="/static/cleanup.js"></script>'
+                   '<script src="/static/account.js"></script>'
                    '<script>if("serviceWorker" in navigator){'
                    'navigator.serviceWorker.register("/sw.js").then(function(){'
                    'if(!navigator.serviceWorker.controller&&!sessionStorage.getItem("mf-sw")){'
@@ -208,6 +221,27 @@ def download_tv():
     if request.args.get("code", "").strip().lower() == "m123":
         return jsonify({"ok": True})
     return jsonify({"ok": False}), 401
+
+
+@app.route("/account-info")
+def account_info():
+    """Kontoinfo for inloggad session (koden). 401 om utloggad/raderad kod."""
+    c = request.cookies.get("mf_auth", "")
+    if "|" not in c:
+        return jsonify({"ok": False}), 401
+    code, device = c.split("|", 1)
+    codes, used, _notes = load_data()
+    if used.get(code) == device:
+        return jsonify({"ok": True, "code": code})
+    return jsonify({"ok": False}), 401
+
+
+@app.route("/logout")
+def logout():
+    """Loggar ut: raderar cookien -> tillbaka till login."""
+    resp = redirect("/")
+    resp.delete_cookie("mf_auth", path="/")
+    return resp
 
 
 @app.route("/favicon.ico")
