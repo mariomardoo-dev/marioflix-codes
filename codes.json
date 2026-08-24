@@ -13,7 +13,8 @@
     "tvtest28",
     "issazazi",
     "milissa123",
-    "amor"
+    "amor",
+    "david"
   ],
   "used": {
     "adrianzazi": "bbb981bc-a0f8-42d4-a948-d9b517328e20",
@@ -21,7 +22,10 @@
     "tvtest28": "9176bdef-c817-48e0-9b08-8d3531d72614",
     "181818": "d-z8wx7jtj5bfmt6576o3",
     "romeo123": "d-jbzt91rhsrgmt4t1y1g",
-    "issazazi": "d-u235aoi2w0smt7d2sj9"
+    "issazazi": "d-u235aoi2w0smt7d2sj9",
+    "amor": "d-f52g7e2b5a7mt7ep16s",
+    "1": "91f1230a-8736-4bbf-a1c9-2dd914def62b",
+    "milissa123": "d-zj5dhvke2ddmt7erwzq"
   },
   "notes": {
     "adrianzazi": "Adrian",
@@ -31,6 +35,7 @@
     "testar": "testar",
     "181818": "Carola",
     "tvtest28": "tv-emulator-temp",
-    "issazazi": "Issa"
+    "issazazi": "Issa",
+    "david": "Amors kompis"
   }
 }
