@@ -179,8 +179,10 @@ def login_gate():
 
 @app.after_request
 def extend_session(resp):
-    """Alltid inloggad (24/7): fornya cookien vid varje besok tills man loggar ut."""
-    if request.path == "/logout":
+    """Alltid inloggad (24/7): fornya cookien vid varje besok tills man loggar ut.
+    Skippar /check (satter redan ratt cookie - far ALDRIG skriva over med gammal)
+    och /logout (raderar)."""
+    if request.path in ("/logout", "/check"):
         return resp
     c = request.cookies.get("mf_auth", "")
     if c and "|" in c and resp.status_code < 400:
