@@ -14,8 +14,7 @@
     "issazazi",
     "milissa123",
     "amor",
-    "david",
-    "hermestest5"
+    "david"
   ],
   "used": {
     "adrianzazi": "bbb981bc-a0f8-42d4-a948-d9b517328e20",
@@ -27,8 +26,7 @@
     "amor": "d-f52g7e2b5a7mt7ep16s",
     "milissa123": "d-zj5dhvke2ddmt7erwzq",
     "1": "d-z2mo2uljhvkmt4trdhw",
-    "m": "d-xc31i2lkrmmt7dyxx3",
-    "hermestest5": "NEW-device"
+    "m": "d-xc31i2lkrmmt7dyxx3"
   },
   "notes": {
     "adrianzazi": "Adrian",
@@ -39,7 +37,6 @@
     "181818": "Carola",
     "tvtest28": "tv-emulator-temp",
     "issazazi": "Issa",
-    "david": "Amors kompis",
-    "hermestest5": "repro"
+    "david": "Amors kompis"
   }
 }
