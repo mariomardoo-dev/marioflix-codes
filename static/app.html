@@ -70,9 +70,17 @@
       <p class="tag" style="margin:0 0 10px">📥 Ladda ner TV-appen</p>
       <div>
         <input id="dlcode" type="password" placeholder="Kod" style="width:160px">
-        <button onclick="tryDownload()" style="width:auto;padding:12px 24px">Ladda ner</button>
+        <button onclick="tryDownload('tv')" style="width:auto;padding:12px 24px">Ladda ner</button>
       </div>
       <div class="err" id="dl-err"></div>
+    </div>
+    <div class="dl" style="width:100%;text-align:center;margin-top:8px">
+      <p class="tag" style="margin:0 0 10px">📥 Ladda ner Android-appen</p>
+      <div>
+        <input id="dlcode2" type="password" placeholder="Kod" style="width:160px">
+        <button onclick="tryDownload('apk')" style="width:auto;padding:12px 24px">Ladda ner</button>
+      </div>
+      <div class="err" id="dl-err2"></div>
     </div>
   </div>
   <script>
@@ -128,9 +136,10 @@
       if (e.key === 'Enter') tryLogin();
     });
 
-    function tryDownload() {
-      var code = document.getElementById('dlcode').value.trim();
-      var err = document.getElementById('dl-err');
+    function tryDownload(kind) {
+      var isApk = kind === 'apk';
+      var code = document.getElementById(isApk ? 'dlcode2' : 'dlcode').value.trim();
+      var err = document.getElementById(isApk ? 'dl-err2' : 'dl-err');
       if (!code) return;
       err.style.color = '#888';
       err.textContent = 'Kollar koden...';
@@ -139,7 +148,7 @@
           if (r.ok) {
             err.style.color = '#6bff8b';
             err.textContent = 'Rätt kod! Laddar ner...';
-            window.location.href = '/apk-tv';
+            window.location.href = isApk ? '/apk' : '/apk-tv';
           } else {
             err.style.color = '#ff6b6b';
             err.textContent = 'Fel kod, försök igen.';
@@ -151,7 +160,10 @@
         });
     }
     document.getElementById('dlcode').addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') tryDownload();
+      if (e.key === 'Enter') tryDownload('tv');
+    });
+    document.getElementById('dlcode2').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') tryDownload('apk');
     });
   </script>
 </body>
