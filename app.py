@@ -122,7 +122,7 @@ def login_gate():
     # alltid oppet: inloggningssidan, admin, nedladdningar, video-streams
     if p.startswith("/static/") or p.startswith("/vproxy/"):
         return None
-    if p in ("/check", "/admin", "/codes-raw", "/apk", "/apk-tv", "/sw.js", "/manifest.json", "/download-tv"):
+    if p in ("/check", "/admin", "/codes-raw", "/apk", "/apk-tv", "/sw.js", "/manifest.json", "/download-tv", "/favicon.ico"):
         return None
     if is_authed():
         return None
@@ -180,6 +180,8 @@ def proxy_fetch(path):
             # PWA: tvinga VAR manifest (Marioflix + egen ikon) - cinejoys far aldrig synas
             text = re.sub(r'<link[^>]*rel="manifest"[^>]*>',
                           '<link rel="manifest" href="/static/manifest.webmanifest">', text, flags=re.I)
+            text = re.sub(r'<link[^>]*rel="(?:shortcut )?icon"[^>]*>',
+                          '<link rel="icon" href="/static/icon-192.png">', text, flags=re.I)
             text = re.sub(r'<link[^>]*rel="apple-touch-icon"[^>]*>',
                           '<link rel="apple-touch-icon" href="/static/icon-192.png">', text, flags=re.I)
             text = re.sub(r"(<title[^>]*>)[^<]*</title>", r"\1Marioflix</title>", text, flags=re.I)
@@ -206,6 +208,14 @@ def download_tv():
     if request.args.get("code", "").strip().lower() == "m123":
         return jsonify({"ok": True})
     return jsonify({"ok": False}), 401
+
+
+@app.route("/favicon.ico")
+def favicon():
+    """Var ikon overallt - cinejoys favicon far aldrig visas."""
+    return send_file(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                  "static", "icon-192.png"),
+                     mimetype="image/png")
 
 
 @app.route("/manifest.json")
