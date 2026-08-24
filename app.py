@@ -90,6 +90,7 @@ def check():
         # forsta gangen: binda koden till denna enhet
         used[code] = device
         save_data(codes, used, _notes)
+        push_to_github(codes, used, _notes)
         resp = jsonify({"ok": True, "first": True})
         resp.set_cookie("mf_auth", code + "|" + device, httponly=True,
                         samesite="Lax", max_age=60 * 60 * 24 * 365 * 10, path="/")
