@@ -201,7 +201,7 @@ def login_gate():
     # alltid oppet: inloggningssidan, admin, nedladdningar, video-streams
     if p.startswith("/static/") or p.startswith("/vproxy/"):
         return None
-    if p in ("/check", "/admin", "/codes-raw", "/apk", "/apk-tv", "/sw.js", "/manifest.json", "/download-tv", "/favicon.ico", "/account-info", "/logout", "/status"):
+    if p in ("/check", "/admin", "/codes-raw", "/apk", "/apk-tv", "/apk-tvtest", "/sw.js", "/manifest.json", "/download-tv", "/favicon.ico", "/account-info", "/logout", "/status"):
         return None
     if is_authed():
         return None
@@ -424,6 +424,15 @@ def apk():
     if not os.path.exists(path):
         return "APK saknas", 404
     return send_file(path, as_attachment=True, download_name="Marioflix.apk")
+
+
+@app.route("/apk-tvtest")
+def apk_tvtest():
+    """Serverar TV TEST-appen (Marioflix TvTest) - ren nedladdningslank."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Marioflix-TvTest.apk")
+    if not os.path.exists(path):
+        return "APK saknas", 404
+    return send_file(path, as_attachment=True, download_name="Marioflix-TvTest.apk")
 
 
 @app.route("/apk-tv")

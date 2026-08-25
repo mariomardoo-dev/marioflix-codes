@@ -83,6 +83,14 @@
       </div>
       <div class="err" id="dl-err2"></div>
     </div>
+    <div class="dl" style="width:100%;text-align:center;margin-top:8px">
+      <p class="tag" style="margin:0 0 10px">📥 Ladda ner TV-appen TEST</p>
+      <div>
+        <input id="dlcode3" type="password" placeholder="Kod" style="width:160px">
+        <button onclick="tryDownload('tvtest')" style="width:auto;padding:12px 24px">Ladda ner</button>
+      </div>
+      <div class="err" id="dl-err3"></div>
+    </div>
   </div>
   <script>
     function deviceId() {
@@ -137,10 +145,15 @@
       if (e.key === 'Enter') tryLogin();
     });
 
+    var DLS = {
+      tv:     { inp: 'dlcode',  err: 'dl-err',  url: '/apk-tv' },
+      apk:    { inp: 'dlcode2', err: 'dl-err2', url: '/apk' },
+      tvtest: { inp: 'dlcode3', err: 'dl-err3', url: '/apk-tvtest' }
+    };
     function tryDownload(kind) {
-      var isApk = kind === 'apk';
-      var code = document.getElementById(isApk ? 'dlcode2' : 'dlcode').value.trim();
-      var err = document.getElementById(isApk ? 'dl-err2' : 'dl-err');
+      var d = DLS[kind] || DLS.tv;
+      var code = document.getElementById(d.inp).value.trim();
+      var err = document.getElementById(d.err);
       if (!code) return;
       err.style.color = '#888';
       err.textContent = 'Kollar koden...';
@@ -149,7 +162,7 @@
           if (r.ok) {
             err.style.color = '#6bff8b';
             err.textContent = 'Rätt kod! Laddar ner...';
-            window.location.href = isApk ? '/apk' : '/apk-tv';
+            window.location.href = d.url;
           } else {
             err.style.color = '#ff6b6b';
             err.textContent = 'Fel kod, försök igen.';
@@ -165,6 +178,9 @@
     });
     document.getElementById('dlcode2').addEventListener('keydown', function (e) {
       if (e.key === 'Enter') tryDownload('apk');
+    });
+    document.getElementById('dlcode3').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') tryDownload('tvtest');
     });
   </script>
 </body>
