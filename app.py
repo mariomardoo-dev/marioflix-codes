@@ -213,7 +213,7 @@ def login_gate():
     """Inloggning framfor allt (som mobilen): streamingsidan kraver kod."""
     p = request.path
     # alltid oppet: inloggningssidan, admin, nedladdningar, video-streams
-    if p.startswith("/static/") or p.startswith("/vproxy/"):
+    if p.startswith("/static/") or p.startswith("/vproxy/") or p.startswith("/cast-proxy/"):
         return None
     if p in ("/check", "/admin", "/codes-raw", "/apk", "/apk-tv", "/apk-tvtest", "/sw.js", "/manifest.json", "/download-tv", "/favicon.ico", "/account-info", "/logout", "/status"):
         return None
@@ -423,6 +423,45 @@ def vproxy(url):
         r.headers["Content-Length"] = length
     r.headers["Accept-Ranges"] = "bytes"
     return r
+
+
+@app.route("/cast-proxy/<path:url>")
+def cast_proxy(url):
+    """Google Cast-hjalp: nebula-CDN:en serverar ALLT som image/jpeg - aven
+    m3u8-spellistorna. Cast-mottagaren (TV:n) kraver ratt Content-Type pa
+    spellistan och vaxrar spela annars (ikon visas men ingen film).
+    Bara MANIFESTEN gar via oss (pytte, KB) - segmenten skrivs om till
+    DIREKTA nebula-URL:er sa ingen Render-bandbredd forbrukas."""
+    try:
+        upstream = requests.get(url, timeout=30,
+                                headers={"User-Agent": UA}, stream=True, allow_redirects=True)
+    except Exception:
+        return "Streamfel", 502
+    if upstream.status_code != 200:
+        return "Streamfel", upstream.status_code
+    body = upstream.content
+    if body[:20].lstrip().upper().startswith(b"#EXTM3U"):
+        base = url[:url.rfind("/") + 1]
+        split = url.split("/", 3)
+        scheme_host = split[0] + "//" + split[2] if len(split) > 2 else ""
+        text = body.decode("utf-8", errors="replace")
+        master = "#EXT-X-STREAM-INF" in text
+        lines = []
+        for line in text.splitlines():
+            if line and not line.startswith("#"):
+                if line.startswith("http"):
+                    # master: varianter via oss (ratt Content-Type);
+                    # variant: segment direkt
+                    line = "/cast-proxy/" + line if master else line
+                elif line.startswith("/"):
+                    line = ("/cast-proxy/" if master else "") + scheme_host + line
+                else:
+                    line = ("/cast-proxy/" if master else "") + base + line
+            lines.append(line)
+        return Response("\n".join(lines), content_type="application/vnd.apple.mpegurl")
+    # inte ett manifest (t.ex. init.mp4 via EXT-X-MAP) - vidare med rak content-type
+    ctype = upstream.headers.get("Content-Type", "application/octet-stream")
+    return Response(body, content_type=ctype)
 
 
 @app.route("/sw.js")
