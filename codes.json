@@ -18,8 +18,7 @@
     "2574",
     "william123",
     "mina123",
-    "ikki",
-    "tvtest214"
+    "ikki"
   ],
   "used": {
     "adrianzazi": "bbb981bc-a0f8-42d4-a948-d9b517328e20",
@@ -37,8 +36,7 @@
     "mina123": "d-5wz7lblzo3pmt7kxxv1",
     "richie": "0c7f6667-9bc9-4f95-86e9-de062853c74d",
     "1": "0fc6dc8d-940d-4283-a374-3bafa4be6213",
-    "m": "91f1230a-8736-4bbf-a1c9-2dd914def62b",
-    "tvtest214": "ae07cbcb-adf8-43cd-af9c-18f6e63578d6"
+    "m": "91f1230a-8736-4bbf-a1c9-2dd914def62b"
   },
   "notes": {
     "adrianzazi": "Adrian",
@@ -51,7 +49,6 @@
     "david": "Amors kompis",
     "1845": "Emir",
     "2574": "Pixie",
-    "mina123": "Mina",
-    "tvtest214": "emulator-temp"
+    "mina123": "Mina"
   }
 }
