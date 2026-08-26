@@ -97,6 +97,20 @@ UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
 
 
+def is_native_hls_browser():
+    """Safari (iPhone/Mac) spelar HLS nativt - skickar ingen Origin-header.
+    Da kan videon ga DIREKT fran CDN:en (utan /vproxy/Render = ingen
+    bandbredd). Chrome/Edge/Firefox har ingen native HLS -> de behover
+    fortfarande /vproxy-tunneln."""
+    ua = request.headers.get("User-Agent", "")
+    l = ua.lower()
+    if "safari" not in l:
+        return False
+    if "chrome" in l or "crios" in l or "android" in l:
+        return False
+    return True
+
+
 def load_data():
     try:
         with open(CODES_FILE, encoding="utf-8") as f:
@@ -245,6 +259,7 @@ def proxy_fetch(path):
 
     ctype = resp.headers.get("Content-Type", "")
     body = resp.content
+    native = is_native_hls_browser()
     if "html" in ctype or "json" in ctype or "javascript" in ctype:
         text = body.decode("utf-8", errors="replace")
         # absoluta cinejoy-lankar -> var rot (gor att allt haller sig pa var doman)
@@ -252,18 +267,27 @@ def proxy_fetch(path):
         text = text.replace("http://cinejoy.to", "")
         # VIDEO: ström-URL:er (nebula-CDN) -> var /vproxy sa Origin-blocket kringgas.
         # Server-till-server skickar ingen Origin -> CDN:en svarar 200.
-        text = text.replace("https://nebula.bright67.online", "/vproxy/https://nebula.bright67.online")
-        text = text.replace("http://nebula.bright67.online", "/vproxy/https://nebula.bright67.online")
+        # UNDANTAG: Safari (native HLS) skickar ingen Origin sjalv -> behall
+        # URL:en DIREKT sa videon gar rakt fran CDN:en (sparar Render-bandbredd).
+        if not native:
+            text = text.replace("https://nebula.bright67.online", "/vproxy/https://nebula.bright67.online")
+            text = text.replace("http://nebula.bright67.online", "/vproxy/https://nebula.bright67.online")
         # no-referrer (skadar inte; vissa CDN:er svarar battre utan Referer)
         text = text.replace("<head>", '<head><meta name="referrer" content="no-referrer">', 1)
-        # injicera stadaren (gommer cinejoy-marken) + Service Worker
-        # (SW:en kor videon genom var server sa den spelas i appen)
-        scripts = ('<script src="/static/cleanup.js"></script>'
-                   '<script src="/static/account.js"></script>'
-                   '<script>if("serviceWorker" in navigator){'
-                   'navigator.serviceWorker.register("/sw.js").then(function(){'
-                   'if(!navigator.serviceWorker.controller&&!sessionStorage.getItem("mf-sw")){'
-                   'sessionStorage.setItem("mf-sw","1");location.reload();}});}</script>')
+        # injicera stadaren (gommer cinejoy-marken) + Service Worker (Chrome)
+        # eller native-HLS (Safari). SW:en kor videon genom var server (Render);
+        # native-HLS kor den direkt fran CDN:en (ingen Render-bandbredd).
+        if native:
+            scripts = ('<script src="/static/cleanup.js"></script>'
+                       '<script src="/static/account.js"></script>'
+                       '<script src="/static/native-hls.js"></script>')
+        else:
+            scripts = ('<script src="/static/cleanup.js"></script>'
+                       '<script src="/static/account.js"></script>'
+                       '<script>if("serviceWorker" in navigator){'
+                       'navigator.serviceWorker.register("/sw.js").then(function(){'
+                       'if(!navigator.serviceWorker.controller&&!sessionStorage.getItem("mf-sw")){'
+                       'sessionStorage.setItem("mf-sw","1");location.reload();}});}</script>')
         if "</head>" in text:
             text = text.replace("</head>", scripts + "</head>", 1)
         elif "</body>" in text:
