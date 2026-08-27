@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Marioflix Cast Receiver</title>
+<script type="text/javascript"
+        src="//www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
+</head>
+<body>
+<cast-media-player></cast-media-player>
+<script>
+// Marioflix Custom Web Receiver - diagnostiskt steg (2026-08-27).
+// Spelar HLS via Shaka Player (useShakaForHls=true) och loggar ALLT
+// diagnostiskt som GET /cast-diag?... (hamnar automatiskt i Render
+// access-loggen - ingen serverkod behovs). Krav: samma HLS-URL som
+// vår nuvarande cast-kedja skickar (cast-proxy). Inga manifest-ändringar.
+(function () {
+  "use strict";
+
+  function diag(params) {
+    try {
+      var q = new URLSearchParams(params).toString();
+      fetch("/cast-diag?" + q, { keepalive: true }).catch(function () {});
+    } catch (e) { /* loggning far aldrig krascha receivern */ }
+  }
+
+  function s(v, max) {
+    try {
+      var t = typeof v === "string" ? v : JSON.stringify(v);
+      if (t === undefined) t = String(v);
+      return t ? t.slice(0, max || 600) : "";
+    } catch (e) {
+      try { return String(v).slice(0, max || 600); } catch (e2) { return ""; }
+    }
+  }
+
+  var context = null;
+  var pm = null;
+
+  try {
+    context = cast.framework.CastReceiverContext.getInstance();
+    pm = context.getPlayerManager();
+  } catch (e) {
+    diag({ ev: "INIT_ERROR", msg: s(e && e.message || e, 300) });
+    return;
+  }
+
+  var sys = cast.framework.system.EventType;
+  var evt = cast.framework.events.EventType;
+
+  // --- diagnostiska event (registreras INNAN start) ---
+  try {
+    context.addEventListener(sys.READY, function () {
+      diag({
+        ev: "READY",
+        sdk: s(window.cast && cast.framework && cast.framework.VERSION, 60),
+        shaka: s(window.shaka && window.shaka.player && window.shaka.player.version, 60),
+        device: s(context.getDeviceInformation ? context.getDeviceInformation() : null, 400)
+      });
+    });
+  } catch (e) {}
+
+  try {
+    pm.addEventListener(evt.LOAD_START, function (e) {
+      diag({ ev: "LOAD_START", url: s(e && e.media && e.media.contentId, 220) });
+    });
+  } catch (e) {}
+
+  try {
+    pm.addEventListener(evt.LOADED, function (e) {
+      diag({ ev: "LOADED", url: s(e && e.media && e.media.contentId, 220) });
+    });
+  } catch (e) {}
+
+  try {
+    pm.addEventListener(evt.ERROR, function (e) {
+      var err = (e && e.error) || {};
+      var shaka = err.shakaError || (err.data && err.data.shakaError) || null;
+      diag({
+        ev: "ERROR",
+        code: s(e.detailedErrorCode, 80),
+        reason: s(e.reason, 80),
+        severity: s(e.severity, 80),
+        shaka: shaka ? s(shaka, 500) : s(err, 400)
+      });
+    });
+  } catch (e) {}
+
+  // mediaStatus: logga playerState/idleReason bara vid forandring (ingen spam)
+  var lastStatus = "";
+  try {
+    pm.addEventListener(evt.MEDIA_STATUS, function () {
+      try {
+        var st = pm.getMediaStatus();
+        var key = (st && (st.playerState + "|" + (st.idleReason || ""))) || "";
+        if (key !== lastStatus) {
+          lastStatus = key;
+          diag({
+            ev: "MEDIA_STATUS",
+            state: s(st.playerState, 40),
+            idle: s(st.idleReason, 40),
+            tracks: String(st && st.activeTrackIds ? st.activeTrackIds.length : "")
+          });
+        }
+      } catch (e2) {}
+    });
+  } catch (e) {}
+
+  // --- start: Shaka Player for HLS ---
+  try {
+    var options = new cast.framework.CastReceiverOptions();
+    options.useShakaForHls = true;   // HLS via Shaka (inte MPL)
+    context.start(options);
+    diag({ ev: "START", useShakaForHls: "true" });
+  } catch (e) {
+    diag({ ev: "START_ERROR", msg: s(e && e.message || e, 300) });
+  }
+})();
+</script>
+</body>
+</html>
