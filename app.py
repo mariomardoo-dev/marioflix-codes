@@ -540,6 +540,99 @@ def _rewrite_avcc(data):
     return bytes(b), True
 
 
+def _fix_audio_asc(data):
+    """Rensar ASC i AUDIO-init (esds/DecoderSpecificInfo) till de 2 giltiga
+    byten (AAC-LC: 1190). Moviebox sparar skraebytes efter de 16 giltiga
+    bitarna (119056e500) som TV:ns mottagare kan avvisa. Giltiga ASC
+    (trailing-bits eller SBR-extension) och Apple-init (1190) lamnas ororda.
+    Returnerar (data, True) om fixad."""
+    i = data.find(b"esds")
+    if i < 12:
+        return data, False
+    j = data.find(b"\x05", i)  # DecoderSpecificInfo-tag
+    if j < 0:
+        return data, False
+    # variabel langd (7-bit-grupper, 0x80 = fortsatter)
+    off = j + 1
+    ln = 0
+    len_field_len = 0
+    while True:
+        if off >= len(data):
+            return data, False
+        c = data[off]
+        off += 1
+        len_field_len += 1
+        ln = (ln << 7) | (c & 0x7F)
+        if not (c & 0x80):
+            break
+    asc_pos = off
+    if ln < 2 or asc_pos + ln > len(data):
+        return data, False
+    asc = data[asc_pos:asc_pos + ln]
+    if ln == 2:
+        return data, False  # redan korrekt (Apple)
+    b0, b1 = asc[0], asc[1]
+    # sanity-check: forsta 16 bitarna maste vara giltig AAC (AOT 1-5, freq<=13, ch 1-8)
+    aot = b0 >> 3
+    freq_idx = ((b0 & 7) << 1) | (b1 >> 7)
+    ch = (b1 >> 3) & 0x0F
+    if aot < 1 or aot > 5 or freq_idx > 13 or ch < 1 or ch > 8:
+        return data, False  # ser inte ut som AAC - ror inte
+    ext_flag = b1 & 1  # extensionFlag (bit 15)
+    if ext_flag:
+        return data, False  # giltig SBR/extension - ror inte
+    # resten efter 16 bitar: giltig rbsp_trailing = 1:a + bara 0:or?
+    rest_bits = "".join(f"{x:08b}" for x in asc[2:])
+    if rest_bits and rest_bits[0] == "1" and set(rest_bits[1:]) <= {"0"}:
+        return data, False  # giltig trailing - oforandrad
+    # OGILTIGT (moviebox-skraeb) -> bygg om till de 2 giltiga byten
+    new_asc = bytes([b0, b1])
+    old_total = len_field_len + ln
+    new_total = 1 + 2  # 1-byte langd (2 < 128) + 2 bytes ASC
+    diff = old_total - new_total
+
+    def find_container(typ, pos, s, e):
+        i = s
+        while i + 8 <= e:
+            size = int.from_bytes(data[i:i + 4], "big")
+            t = data[i + 4:i + 8]
+            hdr = 8
+            if size == 1:
+                size = int.from_bytes(data[i + 8:i + 16], "big")
+                hdr = 16
+            elif size == 0:
+                size = e - i
+                hdr = 8
+            if size < hdr or i + size > e:
+                break
+            if t == typ and i < pos < i + size:
+                return i
+            if i < pos < i + size:
+                r = find_container(typ, pos, i + hdr, i + size)
+                if r is not None:
+                    return r
+            i += size
+        return None
+
+    chain = [i - 4]
+    pos = i - 4
+    for typ in (b"mp4a", b"stsd", b"stbl", b"minf", b"mdia", b"trak", b"moov"):
+        hit = find_container(typ, pos, 0, len(data))
+        if hit is not None:
+            chain.append(hit)
+            pos = hit
+
+    b = bytearray(data)
+    for cpos in chain:
+        cur = int.from_bytes(b[cpos:cpos + 4], "big")
+        if cur >= diff:
+            b[cpos:cpos + 4] = (cur - diff).to_bytes(4, "big")
+    b[j + 1:off] = bytes([2])          # ny ASC-langd (1 byte)
+    new_asc_pos = asc_pos - (len_field_len - 1)  # ASC flyttas nar langdfaltet andras
+    b[new_asc_pos:new_asc_pos + ln] = new_asc  # ersatt ASC (krymp)
+    return bytes(b), True
+
+
 @app.route("/cast-proxy/<path:url>")
 def cast_proxy(url):
     """Google Cast-hjalp: nebula-CDN:en serverar ALLT som image/jpeg - aven
@@ -590,11 +683,14 @@ def cast_proxy(url):
     if head[4:8] in (b"ftyp", b"moov", b"moof", b"styp", b"sidx", b"free",
                      b"mdat", b"skip", b"wide", b"mfra"):
         # SKRIV OM avcC (fel format: lenSize 0xFF/numSPS 0xE1 + NAL-headers
-        # 0x67/0x68) i INIT-segment (ftyp+moov, inga moof/mdat) till korrekt
-        # Apple-format - verifierat med ffmpeg att kedjan da avkodas.
+        # 0x67/0x68) i VIDEO-init (ftyp+moov med avcC) till korrekt Apple-format,
+        # och rensa skraebytes i AUDIO-init (esds/ASC 119056e500 -> 1190).
         # Vanliga segment (moof/mdat) och allt annat lämnas orort.
         if head[4:8] == b"ftyp" and b"moov" in body[:4096]:
-            fixed, ok = _rewrite_avcc(body)
+            if b"avcC" in body[:4096]:
+                fixed, ok = _rewrite_avcc(body)
+            else:
+                fixed, ok = _fix_audio_asc(body)
             if ok:
                 body = fixed
         return Response(body, content_type="video/mp4")
