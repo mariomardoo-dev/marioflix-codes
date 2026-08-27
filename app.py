@@ -445,16 +445,17 @@ def cast_proxy(url):
         split = url.split("/", 3)
         scheme_host = split[0] + "//" + split[2] if len(split) > 2 else ""
         text = body.decode("utf-8", errors="replace")
-        master = "#EXT-X-STREAM-INF" in text
 
+        # KONFIRMATIONSTEST (2.23): ALLT gar via oss (manifest OCH segment) sa
+        # att segmenten kan serveras med ratt Content-Type. (Fore detta gick
+        # segmenten direkt fran CDN:en med text/html/image-jpeg som receivern
+        # avvisade aven med FMP4-hinten.)
         def rw(u):
-            """master: manifest-URL:er via oss (ratt Content-Type);
-            variant: segment/init direkt fran CDN:en (ingen bandbredd)."""
             if u.startswith("http"):
-                return "/cast-proxy/" + u if master else u
+                return "/cast-proxy/" + u
             if u.startswith("/"):
-                return ("/cast-proxy/" if master else "") + scheme_host + u
-            return ("/cast-proxy/" if master else "") + base + u
+                return "/cast-proxy/" + scheme_host + u
+            return "/cast-proxy/" + base + u
 
         lines = []
         for line in text.splitlines():
@@ -463,13 +464,17 @@ def cast_proxy(url):
             else:
                 lines.append(line)
         out = "\n".join(lines)
-        if master:
-            # URI="..." i #-rader (EXT-X-MEDIA audio/sprak, I-FRAME) ar ocksa
-            # manifest - skriv om dem via oss (annars fel Content-Type pa TV:n)
-            out = re.sub(r'URI="([^"]+)"',
-                         lambda mm: 'URI="' + rw(mm.group(1)) + '"', out)
+        # URI="..." i #-rader (EXT-X-MAP init, EXT-X-MEDIA audio) - ocksa via oss
+        out = re.sub(r'URI="([^"]+)"',
+                     lambda mm: 'URI="' + rw(mm.group(1)) + '"', out)
         return Response(out, content_type="application/vnd.apple.mpegurl")
-    # inte ett manifest (t.ex. init.mp4 via EXT-X-MAP) - vidare med rak content-type
+    # Inte ett manifest (segment/init): sniffa fMP4 -> video/mp4 (annars
+    # text/html/image-jpeg fran CDN:en som receivern avvisar). KONFIRMATIONSTEST.
+    # fMP4-box = [4-byte storlek][4-byte typ] - typen ligger pa byte 4-8.
+    head = body[:16]
+    if head[4:8] in (b"ftyp", b"moov", b"moof", b"styp", b"sidx", b"free",
+                     b"mdat", b"skip", b"wide", b"mfra"):
+        return Response(body, content_type="video/mp4")
     ctype = upstream.headers.get("Content-Type", "application/octet-stream")
     return Response(body, content_type=ctype)
 
