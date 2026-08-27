@@ -215,7 +215,7 @@ def login_gate():
     # alltid oppet: inloggningssidan, admin, nedladdningar, video-streams
     if p.startswith("/static/") or p.startswith("/vproxy/") or p.startswith("/cast-proxy/"):
         return None
-    if p in ("/check", "/admin", "/codes-raw", "/apk", "/apk-tv", "/apk-tvtest", "/sw.js", "/manifest.json", "/download-tv", "/favicon.ico", "/account-info", "/logout", "/status"):
+    if p in ("/check", "/admin", "/codes-raw", "/apk", "/apk-tv", "/apk-tvtest", "/sw.js", "/manifest.json", "/download-tv", "/favicon.ico", "/account-info", "/logout", "/status", "/diag-mode"):
         return None
     if is_authed():
         return None
@@ -633,6 +633,51 @@ def _fix_audio_asc(data):
     return bytes(b), True
 
 
+def diag_master_rewrite(text, mode):
+    """DIAGNOSTISKT master-test (Marios godkanda steg A/B/C). Andrar BARA
+    master-manifestet (inte varianter/init/segment):
+    A = enbart Content-Type -> x-mpegURL (hanteras av anroparen)
+    B = A + #EXT-X-VERSION:7 -> 6
+    C = B + EXT-X-MEDIA normaliseras (LANGUAGE=en, NAME=English, CHANNELS=2)
+        + DEFAULT=YES tas bort fran STREAM-INF. Aterstallningsbart: mode=OFF."""
+    lines = text.splitlines()
+    out = []
+    for line in lines:
+        if mode in ("B", "C") and line.startswith("#EXT-X-VERSION:7"):
+            out.append("#EXT-X-VERSION:6")
+            continue
+        if mode == "C" and line.startswith("#EXT-X-MEDIA:TYPE=AUDIO"):
+            line = re.sub(r'NAME="[^"]*"', 'NAME="English"', line)
+            if "LANGUAGE=" not in line:
+                line = line.replace("TYPE=AUDIO,GROUP-ID=", 'TYPE=AUDIO,LANGUAGE="en",GROUP-ID=')
+            if "CHANNELS=" not in line:
+                line = line.replace(",DEFAULT=", ',CHANNELS="2",DEFAULT=')
+            out.append(line)
+            continue
+        if mode == "C" and line.startswith("#EXT-X-STREAM-INF"):
+            line = re.sub(r"DEFAULT=YES,", "", line)
+            out.append(line)
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
+DIAG_MODE = {"mode": "OFF"}
+
+
+@app.route("/diag-mode")
+def diag_mode():
+    """Vaxlar diagnostiskt master-lage (A/B/C/OFF) - ingen redeploy behovs.
+    Anvands bara for att isolera varfor TV:ns mottagare avvisar mastern."""
+    if request.args.get("pw", "") != os.environ.get(ADMIN_PW_ENV, ""):
+        return "fel pw", 401
+    mode = request.args.get("set", "").strip().upper()
+    if mode in ("A", "B", "C", "OFF"):
+        DIAG_MODE["mode"] = mode
+    return "mode=" + DIAG_MODE["mode"] + " (A=CT, B=+VERSION6, C=+media-normalisering, OFF=av)" + \
+           (" | SATT" if mode in ("A", "B", "C", "OFF") else " | oforandrad")
+
+
 @app.route("/cast-proxy/<path:url>")
 def cast_proxy(url):
     """Google Cast-hjalp: nebula-CDN:en serverar ALLT som image/jpeg - aven
@@ -675,6 +720,12 @@ def cast_proxy(url):
         # URI="..." i #-rader (EXT-X-MAP init, EXT-X-MEDIA audio) - ocksa via oss
         out = re.sub(r'URI="([^"]+)"',
                      lambda mm: 'URI="' + rw(mm.group(1)) + '"', out)
+        # DIAGNOSTIK (Marios godkanda steg A/B/C): bara MASTER (har
+        # EXT-X-STREAM-INF), bara manifestet - varianter/init/segment ororda.
+        mode = DIAG_MODE["mode"]
+        if mode in ("A", "B", "C") and "#EXT-X-STREAM-INF" in text:
+            out = diag_master_rewrite(out, mode)
+            return Response(out, content_type="application/x-mpegURL")
         return Response(out, content_type="application/vnd.apple.mpegurl")
     # Inte ett manifest (segment/init): sniffa fMP4 -> video/mp4 (annars
     # text/html/image-jpeg fran CDN:en som receivern avvisar). KONFIRMATIONSTEST.
