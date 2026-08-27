@@ -425,6 +425,99 @@ def vproxy(url):
     return r
 
 
+def _fix_avcc(data):
+    """Lagar avcC i fMP4-init-segment. Vissa encoders (moviebox) sparar SPS/PPS
+    MED NAL-header (0x67/0x68) inbakad i avcC, men specen kraver payload UTAN
+    header. Android/ExoPlayer (Cast-receivern pa TV:n) initierar avkodaren med
+    den felaktiga SPS -> avkodarfel -> IDLE_REASON=4. hls.js (mobilens spelare)
+    lagar detta automatiskt - vi gor samma lagning server-side.
+    Returnerar (lagad_data, True) eller (data, False) om inget att laga."""
+    i = data.find(b"avcC")
+    if i < 12:
+        return data, False
+    start = i - 4  # avcC-boxens size-falt
+    p = start + 8  # payload borjar direkt (avcC ar INTE en fullbox)
+    if p + 7 > len(data):
+        return data, False
+    num_sps = data[p + 5] & 31
+    off = p + 6
+    entries = []  # (langdfalt_pos, data_pos, langd)
+    for _ in range(num_sps):
+        if off + 2 > len(data):
+            return data, False
+        ln = int.from_bytes(data[off:off + 2], "big")
+        if ln < 0 or off + 2 + ln > len(data):
+            return data, False
+        entries.append((off, off + 2, ln))
+        off += 2 + ln
+    if off >= len(data):
+        return data, False
+    num_pps = data[off] & 31
+    off += 1
+    for _ in range(num_pps):
+        if off + 2 > len(data):
+            return data, False
+        ln = int.from_bytes(data[off:off + 2], "big")
+        if ln < 0 or off + 2 + ln > len(data):
+            return data, False
+        entries.append((off, off + 2, ln))
+        off += 2 + ln
+
+    # SPS/PPS med NAL-header inbakad (0x67 = SPS, 0x68 = PPS)
+    trim = [(lp, dp, ln) for lp, dp, ln in entries if ln >= 1 and data[dp] in (0x67, 0x68)]
+    if not trim:
+        return data, False
+    n = len(trim)
+
+    # Hitta box-kedjan (avcC -> avc1 -> stsd -> ... -> moov) pa originaldatan.
+    # Positionerna andras inte av mutationerna (alla ligger innanfor avcC),
+    # sa vi kan samla dem forst och mutera sedan.
+    def find_container(typ, pos, s, e):
+        """Hittar box av typ som innehaller byte-positionen pos inom [s, e)."""
+        i = s
+        while i + 8 <= e:
+            size = int.from_bytes(data[i:i + 4], "big")
+            t = data[i + 4:i + 8]
+            hdr = 8
+            if size == 1:
+                size = int.from_bytes(data[i + 8:i + 16], "big")
+                hdr = 16
+            elif size == 0:
+                size = e - i
+                hdr = 8
+            if size < hdr or i + size > e:
+                break
+            if t == typ and i < pos < i + size:
+                return i
+            if i < pos < i + size:
+                r = find_container(typ, pos, i + hdr, i + size)
+                if r is not None:
+                    return r
+            i += size
+        return None
+
+    chain = [start]
+    pos = start
+    for typ in (b"avc1", b"stsd", b"stbl", b"minf", b"mdia", b"trak", b"moov"):
+        hit = find_container(typ, pos, 0, len(data))
+        if hit is not None:
+            chain.append(hit)
+            pos = hit
+
+    b = bytearray(data)
+    # 1) minska storleksfalten med n (inifran och ut - positioner oforandrade)
+    for cpos in chain:
+        cur = int.from_bytes(b[cpos:cpos + 4], "big")
+        if cur >= n:
+            b[cpos:cpos + 4] = (cur - n).to_bytes(4, "big")
+    # 2) justera langdfalten + ta bort NAL-header-bytarna (fallande offset sa
+    #    tidigare borttagningar inte flyttar senare positioner)
+    for lp, dp, ln in sorted(trim, key=lambda t: -t[1]):
+        b[lp:lp + 2] = (ln - 1).to_bytes(2, "big")
+        del b[dp]
+    return bytes(b), True
+
+
 @app.route("/cast-proxy/<path:url>")
 def cast_proxy(url):
     """Google Cast-hjalp: nebula-CDN:en serverar ALLT som image/jpeg - aven
@@ -474,6 +567,13 @@ def cast_proxy(url):
     head = body[:16]
     if head[4:8] in (b"ftyp", b"moov", b"moof", b"styp", b"sidx", b"free",
                      b"mdat", b"skip", b"wide", b"mfra"):
+        # LAGA avcC (SPS/PPS med NAL-header) i INIT-segment (ftyp+moov, inga
+        # moof/mdat) - exakt samma lagning som hls.js gor i mobilen. Vanliga
+        # segment (moof/mdat) och allt annat lämnas orort.
+        if head[4:8] == b"ftyp" and b"moov" in body[:4096]:
+            fixed, ok = _fix_avcc(body)
+            if ok:
+                body = fixed
         return Response(body, content_type="video/mp4")
     ctype = upstream.headers.get("Content-Type", "application/octet-stream")
     return Response(body, content_type=ctype)
