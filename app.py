@@ -7,10 +7,12 @@
 import base64
 import json
 import os
+import posixpath
 import re
 import threading
 import time
 import urllib.request
+from urllib.parse import urlparse
 
 import requests
 from flask import Flask, Response, jsonify, redirect, request, send_file
@@ -639,7 +641,8 @@ def diag_master_rewrite(text, mode):
     A = enbart Content-Type -> x-mpegURL (hanteras av anroparen)
     B = A + #EXT-X-VERSION:7 -> 6
     C = B + EXT-X-MEDIA normaliseras (LANGUAGE=en, NAME=English, CHANNELS=2)
-        + DEFAULT=YES tas bort fran STREAM-INF. Aterstallningsbart: mode=OFF."""
+        + DEFAULT=YES tas bort fran STREAM-INF. Aterstallningsbart: mode=OFF.
+    (Mode D anvander C:s normalisering + relativa URI:er - se cast_proxy.)"""
     lines = text.splitlines()
     out = []
     for line in lines:
@@ -662,6 +665,34 @@ def diag_master_rewrite(text, mode):
     return "\n".join(out)
 
 
+def _rewrite_uri(u, base, scheme_host):
+    """Absolut-path-form (default): /cast-proxy/<fulla upstream-URL:en>."""
+    if u.startswith("http"):
+        return "/cast-proxy/" + u
+    if u.startswith("/"):
+        return "/cast-proxy/" + scheme_host + u
+    return "/cast-proxy/" + base + u
+
+
+def _rewrite_uri_rel(u, base, scheme_host, manifest_url):
+    """DIAG D: relativ URI (Apple-stil) som loser (RFC 3986) till EXAKT
+    samma slut-URL som _rewrite_uri - bara URI-FORMEN andras, aldrig
+    destinationen. Cross-scheme/host faller tillbaka till absolut form."""
+    t = _rewrite_uri(u, base, scheme_host)
+    try:
+        tu = urlparse(t[len("/cast-proxy/"):])
+        mu = urlparse(manifest_url)
+        if (tu.scheme == mu.scheme and tu.netloc == mu.netloc
+                and tu.path and mu.path):
+            rel = posixpath.relpath(tu.path, posixpath.dirname(mu.path))
+            if rel != ".":
+                return rel + (("?" + tu.query) if tu.query else "") \
+                            + (("#" + tu.fragment) if tu.fragment else "")
+    except Exception:
+        pass
+    return t
+
+
 DIAG_MODE = {"mode": "OFF"}
 
 
@@ -672,10 +703,10 @@ def diag_mode():
     if request.args.get("pw", "") != os.environ.get(ADMIN_PW_ENV, ""):
         return "fel pw", 401
     mode = request.args.get("set", "").strip().upper()
-    if mode in ("A", "B", "C", "OFF"):
+    if mode in ("A", "B", "C", "D", "OFF"):
         DIAG_MODE["mode"] = mode
-    return "mode=" + DIAG_MODE["mode"] + " (A=CT, B=+VERSION6, C=+media-normalisering, OFF=av)" + \
-           (" | SATT" if mode in ("A", "B", "C", "OFF") else " | oforandrad")
+    return "mode=" + DIAG_MODE["mode"] + " (A=CT, B=+VERSION6, C=+media-normalisering, D=+relativa URI:er, OFF=av)" + \
+           (" | SATT" if mode in ("A", "B", "C", "D", "OFF") else " | oforandrad")
 
 
 @app.route("/cast-proxy/<path:url>")
@@ -685,6 +716,8 @@ def cast_proxy(url):
     spellistan och vaxrar spela annars (ikon visas men ingen film).
     Bara MANIFESTEN gar via oss (pytte, KB) - segmenten skrivs om till
     DIREKTA nebula-URL:er sa ingen Render-bandbredd forbrukas."""
+    app.logger.info("CASTPROXY %s UA=%s", request.url,
+                    request.headers.get("User-Agent", "-")[:120])
     try:
         upstream = requests.get(url, timeout=30,
                                 headers={"User-Agent": UA}, stream=True, allow_redirects=True)
@@ -703,12 +736,10 @@ def cast_proxy(url):
         # att segmenten kan serveras med ratt Content-Type. (Fore detta gick
         # segmenten direkt fran CDN:en med text/html/image-jpeg som receivern
         # avvisade aven med FMP4-hinten.)
-        def rw(u):
-            if u.startswith("http"):
-                return "/cast-proxy/" + u
-            if u.startswith("/"):
-                return "/cast-proxy/" + scheme_host + u
-            return "/cast-proxy/" + base + u
+        # DIAG D: byt URI-FORMEN till relativ (Apple-stil) - samma slut-URL.
+        rw = (lambda u: _rewrite_uri_rel(u, base, scheme_host, url)) \
+            if DIAG_MODE["mode"] == "D" else \
+            (lambda u: _rewrite_uri(u, base, scheme_host))
 
         lines = []
         for line in text.splitlines():
@@ -722,9 +753,10 @@ def cast_proxy(url):
                      lambda mm: 'URI="' + rw(mm.group(1)) + '"', out)
         # DIAGNOSTIK (Marios godkanda steg A/B/C): bara MASTER (har
         # EXT-X-STREAM-INF), bara manifestet - varianter/init/segment ororda.
+        # D behaller C:s normalisering (VERSION6 + media-attribut) + CT.
         mode = DIAG_MODE["mode"]
-        if mode in ("A", "B", "C") and "#EXT-X-STREAM-INF" in text:
-            out = diag_master_rewrite(out, mode)
+        if mode in ("A", "B", "C", "D") and "#EXT-X-STREAM-INF" in text:
+            out = diag_master_rewrite(out, "C" if mode == "D" else mode)
             return Response(out, content_type="application/x-mpegURL")
         return Response(out, content_type="application/vnd.apple.mpegurl")
     # Inte ett manifest (segment/init): sniffa fMP4 -> video/mp4 (annars
