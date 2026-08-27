@@ -425,13 +425,17 @@ def vproxy(url):
     return r
 
 
-def _fix_avcc(data):
-    """Lagar avcC i fMP4-init-segment. Vissa encoders (moviebox) sparar SPS/PPS
-    MED NAL-header (0x67/0x68) inbakad i avcC, men specen kraver payload UTAN
-    header. Android/ExoPlayer (Cast-receivern pa TV:n) initierar avkodaren med
-    den felaktiga SPS -> avkodarfel -> IDLE_REASON=4. hls.js (mobilens spelare)
-    lagar detta automatiskt - vi gor samma lagning server-side.
-    Returnerar (lagad_data, True) eller (data, False) om inget att laga."""
+def _rewrite_avcc(data):
+    """Skriver om avcC-boxen i fMP4-init-segment till KORREKT format (Apples):
+    [configVer 01][profile][compat][level][lenSize 03][numSPS 01][SPS-langd 2][0x27+SPS]
+    [numPPS 01][PPS-langd 2][0x28+PPS].
+
+    Moviebox har fel format (lenSize-byte = 0xFF, numSPS-byte = 0xE1, NAL-headers
+    0x67/0x68 = nal_ref_idc 3) som TV:ns avkodare (ExoPlayer/ffmpeg) AVVISAR:
+    "Ignoring NAL type 13 in extradata" + "Failed to parse header of NALU" +
+    "non-existing SPS/PPS" -> 0 frames -> IDLE_REASON=4. Verifierat med ffmpeg:
+    hela moviebox-kedjan avkodas felfritt med omskriven avcC, Apple-init (redan
+    korrekt) passerar oforandrad. Returnerar (data, True) om omskriven."""
     i = data.find(b"avcC")
     if i < 12:
         return data, False
@@ -439,39 +443,62 @@ def _fix_avcc(data):
     p = start + 8  # payload borjar direkt (avcC ar INTE en fullbox)
     if p + 7 > len(data):
         return data, False
+    prof = data[p + 1]
+    compat = data[p + 2]
+    level = data[p + 3]
+    len_size = data[p + 4]
     num_sps = data[p + 5] & 31
     off = p + 6
-    entries = []  # (langdfalt_pos, data_pos, langd)
+    sps_list = []
     for _ in range(num_sps):
         if off + 2 > len(data):
             return data, False
         ln = int.from_bytes(data[off:off + 2], "big")
-        if ln < 0 or off + 2 + ln > len(data):
+        if ln < 1 or off + 2 + ln > len(data):
             return data, False
-        entries.append((off, off + 2, ln))
+        sps_list.append(data[off + 2:off + 2 + ln])
         off += 2 + ln
     if off >= len(data):
         return data, False
+    num_pps_pos = off
     num_pps = data[off] & 31
     off += 1
+    pps_list = []
     for _ in range(num_pps):
         if off + 2 > len(data):
             return data, False
         ln = int.from_bytes(data[off:off + 2], "big")
-        if ln < 0 or off + 2 + ln > len(data):
+        if ln < 1 or off + 2 + ln > len(data):
             return data, False
-        entries.append((off, off + 2, ln))
+        pps_list.append(data[off + 2:off + 2 + ln])
         off += 2 + ln
-
-    # SPS/PPS med NAL-header inbakad (0x67 = SPS, 0x68 = PPS)
-    trim = [(lp, dp, ln) for lp, dp, ln in entries if ln >= 1 and data[dp] in (0x67, 0x68)]
-    if not trim:
+    if not sps_list or not pps_list:
         return data, False
-    n = len(trim)
 
-    # Hitta box-kedjan (avcC -> avc1 -> stsd -> ... -> moov) pa originaldatan.
-    # Positionerna andras inte av mutationerna (alla ligger innanfor avcC),
-    # sa vi kan samla dem forst och mutera sedan.
+    # Redan korrekt Apple-format? (lenSize=03, numSPS-byte=01, SPS/PPS med
+    # NAL-header typ 7/8) -> lamna oforandrad (Apple-init).
+    sps_hdr_ok = all(s and (s[0] & 0x1F) == 7 for s in sps_list)
+    pps_hdr_ok = all(q and (q[0] & 0x1F) == 8 for q in pps_list)
+    if len_size == 3 and data[p + 5] == 1 and data[num_pps_pos] == 1 and sps_hdr_ok and pps_hdr_ok:
+        return data, False
+
+    # Normalisera payloads (ta bort ev. NAL-header fran SPS/PPS)
+    sps_payloads = [s[1:] if (s[0] & 0x1F) == 7 else s for s in sps_list]
+    pps_payloads = [q[1:] if (q[0] & 0x1F) == 8 else q for q in pps_list]
+
+    # Bygg ny avcC i Apples exakta format (langd = payload + 1 header-byte)
+    body = bytes([1, prof, compat, level, 3, len(sps_payloads)])
+    for s in sps_payloads:
+        body += (len(s) + 1).to_bytes(2, "big") + b"\x27" + s
+    body += bytes([len(pps_payloads)])
+    for q in pps_payloads:
+        body += (len(q) + 1).to_bytes(2, "big") + b"\x28" + q
+    new_avcc = (len(body) + 8).to_bytes(4, "big") + b"avcC" + body
+
+    old_size = int.from_bytes(data[start:start + 4], "big")
+    diff = old_size - len(new_avcc)
+
+    # Hitta box-kedjan (avcC -> avc1 -> stsd -> ... -> moov) pa originaldatan
     def find_container(typ, pos, s, e):
         """Hittar box av typ som innehaller byte-positionen pos inom [s, e)."""
         i = s
@@ -505,16 +532,11 @@ def _fix_avcc(data):
             pos = hit
 
     b = bytearray(data)
-    # 1) minska storleksfalten med n (inifran och ut - positioner oforandrade)
     for cpos in chain:
         cur = int.from_bytes(b[cpos:cpos + 4], "big")
-        if cur >= n:
-            b[cpos:cpos + 4] = (cur - n).to_bytes(4, "big")
-    # 2) justera langdfalten + ta bort NAL-header-bytarna (fallande offset sa
-    #    tidigare borttagningar inte flyttar senare positioner)
-    for lp, dp, ln in sorted(trim, key=lambda t: -t[1]):
-        b[lp:lp + 2] = (ln - 1).to_bytes(2, "big")
-        del b[dp]
+        if cur >= diff:
+            b[cpos:cpos + 4] = (cur - diff).to_bytes(4, "big")
+    b[start:start + old_size] = new_avcc
     return bytes(b), True
 
 
@@ -567,11 +589,12 @@ def cast_proxy(url):
     head = body[:16]
     if head[4:8] in (b"ftyp", b"moov", b"moof", b"styp", b"sidx", b"free",
                      b"mdat", b"skip", b"wide", b"mfra"):
-        # LAGA avcC (SPS/PPS med NAL-header) i INIT-segment (ftyp+moov, inga
-        # moof/mdat) - exakt samma lagning som hls.js gor i mobilen. Vanliga
-        # segment (moof/mdat) och allt annat lämnas orort.
+        # SKRIV OM avcC (fel format: lenSize 0xFF/numSPS 0xE1 + NAL-headers
+        # 0x67/0x68) i INIT-segment (ftyp+moov, inga moof/mdat) till korrekt
+        # Apple-format - verifierat med ffmpeg att kedjan da avkodas.
+        # Vanliga segment (moof/mdat) och allt annat lämnas orort.
         if head[4:8] == b"ftyp" and b"moov" in body[:4096]:
-            fixed, ok = _fix_avcc(body)
+            fixed, ok = _rewrite_avcc(body)
             if ok:
                 body = fixed
         return Response(body, content_type="video/mp4")
