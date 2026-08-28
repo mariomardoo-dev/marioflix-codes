@@ -217,7 +217,7 @@ def login_gate():
     # alltid oppet: inloggningssidan, admin, nedladdningar, video-streams
     if p.startswith("/static/") or p.startswith("/vproxy/") or p.startswith("/cast-proxy/"):
         return None
-    if p in ("/check", "/admin", "/codes-raw", "/apk", "/apk-tv", "/apk-tvtest", "/sw.js", "/manifest.json", "/download-tv", "/favicon.ico", "/account-info", "/logout", "/status", "/diag-mode"):
+    if p in ("/check", "/admin", "/codes-raw", "/apk", "/apk-nya", "/apk-tv", "/apk-tvtest", "/sw.js", "/manifest.json", "/download-tv", "/favicon.ico", "/account-info", "/logout", "/status", "/diag-mode"):
         return None
     if is_authed():
         return None
