@@ -815,6 +815,15 @@ def apk_tvtest():
     return send_file(path, as_attachment=True, download_name="Marioflix-TvTest.apk")
 
 
+@app.route("/apk-nya")
+def apk_nya():
+    """Serverar NYA Android-appen (Nya Marioflix 3.0 - ny Cast-implementation)."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Marioflix-Nya.apk")
+    if not os.path.exists(path):
+        return "APK saknas", 404
+    return send_file(path, as_attachment=True, download_name="Marioflix-Nya.apk")
+
+
 @app.route("/apk-tv")
 def apk_tv():
     """Serverar TV-appen (Marioflix-Tv) - ren nedladdningslank."""

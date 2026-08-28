@@ -91,6 +91,14 @@
       </div>
       <div class="err" id="dl-err3"></div>
     </div>
+    <div class="dl" style="width:100%;text-align:center;margin-top:8px">
+      <p class="tag" style="margin:0 0 10px">📥 Ladda ner Android-appen NY (3.0)</p>
+      <div>
+        <input id="dlcode4" type="password" placeholder="Kod" style="width:160px">
+        <button onclick="tryDownload('ny')" style="width:auto;padding:12px 24px">Ladda ner</button>
+      </div>
+      <div class="err" id="dl-err4"></div>
+    </div>
   </div>
   <script>
     function deviceId() {
@@ -148,7 +156,8 @@
     var DLS = {
       tv:     { inp: 'dlcode',  err: 'dl-err',  url: '/apk-tv' },
       apk:    { inp: 'dlcode2', err: 'dl-err2', url: '/apk' },
-      tvtest: { inp: 'dlcode3', err: 'dl-err3', url: '/apk-tvtest' }
+      tvtest: { inp: 'dlcode3', err: 'dl-err3', url: '/apk-tvtest' },
+      ny:     { inp: 'dlcode4', err: 'dl-err4', url: '/apk-nya' }
     };
     function tryDownload(kind) {
       var d = DLS[kind] || DLS.tv;
@@ -181,6 +190,9 @@
     });
     document.getElementById('dlcode3').addEventListener('keydown', function (e) {
       if (e.key === 'Enter') tryDownload('tvtest');
+    });
+    document.getElementById('dlcode4').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') tryDownload('ny');
     });
   </script>
 </body>
