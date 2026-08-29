@@ -859,6 +859,18 @@ def apk_tvtest():
     return send_file(path, as_attachment=True, download_name="Marioflix-TvTest.apk")
 
 
+@app.route("/nya-version")
+def nya_version():
+    """Versionsnummer for Nya Marioflix auto-update - las fran repots fil.
+    (Ingen GitHub rate-limit som api.github.com.)"""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "nya_version.txt")
+    try:
+        with open(path, encoding="utf-8") as f:
+            return f.read().strip(), 200
+    except Exception:
+        return "1", 200
+
+
 @app.route("/apk-nya")
 def apk_nya():
     """Serverar NYA Android-appen (Nya Marioflix 3.0 - ny Cast-implementation)."""
