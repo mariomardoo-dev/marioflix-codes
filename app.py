@@ -794,13 +794,12 @@ def cast_proxy(url):
         # DIAGNOSTIK (Marios godkanda steg A/B/C): bara MASTER (har
         # EXT-X-STREAM-INF), bara manifestet - varianter/init/segment ororda.
         # D behaller C:s normalisering (VERSION6 + media-attribut) + CT.
-        mode = DIAG_MODE["mode"]
-        if mode in ("A", "B", "C", "D") and "#EXT-X-STREAM-INF" in text:
-            out = diag_master_rewrite(out, "C" if mode == "D" else mode)
-            return Response(out, content_type="application/x-mpegURL")
-        # CAST-FIX (2026-08-27): filtera bort varianter TV:n inte klarar
-        # (HEVC/4K alltid, 1080p om lagre finns) - ALLTID for cast-proxy.
+        # CAST-FIX (2026-08-27): ALLTID filtera bort varianter TV:n inte klarar
+        # (HEVC/4K alltid, 1080p om lagre finns) - galler alla master-svar.
         if "#EXT-X-STREAM-INF" in text:
+            mode = DIAG_MODE["mode"]
+            if mode in ("A", "B", "C", "D"):
+                out = diag_master_rewrite(out, "C" if mode == "D" else mode)
             out = _filter_cast_variants(out)
             return Response(out, content_type="application/x-mpegURL")
         return Response(out, content_type="application/vnd.apple.mpegurl")
