@@ -12,6 +12,7 @@ import re
 import threading
 import time
 import urllib.request
+import uuid
 from urllib.parse import urlparse
 
 import requests
@@ -881,6 +882,45 @@ def nya_version():
             return f.read().strip(), 200
     except Exception:
         return "1", 200
+
+
+# ---- VTT-HOST (3.8.2): minimal, ISOLERAD route for konverterade undertexter.
+# Telefonen POSTar WebVTT (cast.js SRT->VTT) och far en vanlig https-URL som
+# Default Media Receiver kan hamta (data:-URL:er accepteras inte - fysiskt
+# bevisat). Ror INTE cast-proxy/CORS-fixen/HLS-normaliseringen - egen store.
+VTT_STORE = {}   # id -> (expires, text)
+VTT_TTL = 3600
+
+
+@app.route("/vtt", methods=["POST"])
+def vtt_upload():
+    try:
+        body = request.get_data()
+        if len(body) > 1_000_000:      # OOM-skydd (max ~1 MB)
+            return "for stor", 413
+        text = body.decode("utf-8", errors="replace")
+        if "WEBVTT" not in text[:100]:
+            return "inte vtt", 400
+        vid = uuid.uuid4().hex[:16]
+        VTT_STORE[vid] = (time.time() + VTT_TTL, text)
+        return request.host_url.rstrip("/") + "/vtt/" + vid, 200
+    except Exception:
+        return "fel", 500
+
+
+@app.route("/vtt/<vid>")
+def vtt_get(vid):
+    item = VTT_STORE.get(vid)
+    if not item:
+        return "borta", 404
+    exp, text = item
+    if time.time() > exp:
+        VTT_STORE.pop(vid, None)
+        return "borta", 404
+    r = Response(text, content_type="text/vtt; charset=utf-8")
+    r.headers["Access-Control-Allow-Origin"] = "*"   # DMR (gstatic) maste lasa
+    r.headers["Cache-Control"] = "no-store"
+    return r
 
 
 @app.route("/apk-nya")
