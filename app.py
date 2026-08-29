@@ -749,6 +749,18 @@ def diag_mode():
            (" | SATT" if mode in ("A", "B", "C", "D", "OFF") else " | oforandrad")
 
 
+def _cast_resp(body, ctype, status=200):
+    """Cast-proxy-svar med CORS (ROOT-CAUSE-FIX 2026-08-27):
+    Default Media Receiver kor fran gstatic-origin och kan INTE lasa
+    manifest/segment utan Access-Control-Allow-Origin (darför har aldrig
+    en riktig film spelat: master ×4 -> IDLE 4). Apple skickar ACAO:* -
+    det ar darfor Apple-HLS spelar. Gäller ALLA svar: master, varianter,
+    audio, init, segment + fel."""
+    r = Response(body, content_type=ctype, status=status)
+    r.headers["Access-Control-Allow-Origin"] = "*"
+    return r
+
+
 @app.route("/cast-proxy/<path:url>")
 def cast_proxy(url):
     """Google Cast-hjalp: nebula-CDN:en serverar ALLT som image/jpeg - aven
@@ -762,9 +774,9 @@ def cast_proxy(url):
         upstream = requests.get(url, timeout=30,
                                 headers={"User-Agent": UA}, stream=True, allow_redirects=True)
     except Exception:
-        return "Streamfel", 502
+        return _cast_resp("Streamfel", "text/plain; charset=utf-8", 502)
     if upstream.status_code != 200:
-        return "Streamfel", upstream.status_code
+        return _cast_resp("Streamfel", "text/plain; charset=utf-8", upstream.status_code)
     body = upstream.content
     if body[:20].lstrip().upper().startswith(b"#EXTM3U"):
         base = url[:url.rfind("/") + 1]
@@ -801,8 +813,8 @@ def cast_proxy(url):
             if mode in ("A", "B", "C", "D"):
                 out = diag_master_rewrite(out, "C" if mode == "D" else mode)
             out = _filter_cast_variants(out)
-            return Response(out, content_type="application/x-mpegURL")
-        return Response(out, content_type="application/vnd.apple.mpegurl")
+            return _cast_resp(out, "application/x-mpegURL")
+        return _cast_resp(out, "application/vnd.apple.mpegurl")
     # Inte ett manifest (segment/init): sniffa fMP4 -> video/mp4 (annars
     # text/html/image-jpeg fran CDN:en som receivern avvisar). KONFIRMATIONSTEST.
     # fMP4-box = [4-byte storlek][4-byte typ] - typen ligger pa byte 4-8.
@@ -820,9 +832,9 @@ def cast_proxy(url):
                 fixed, ok = _fix_audio_asc(body)
             if ok:
                 body = fixed
-        return Response(body, content_type="video/mp4")
+        return _cast_resp(body, "video/mp4")
     ctype = upstream.headers.get("Content-Type", "application/octet-stream")
-    return Response(body, content_type=ctype)
+    return _cast_resp(body, ctype)
 
 
 @app.route("/sw.js")
