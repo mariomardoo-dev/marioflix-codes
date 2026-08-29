@@ -696,6 +696,46 @@ def _rewrite_uri_rel(u, base, scheme_host, manifest_url):
 DIAG_MODE = {"mode": "OFF"}
 
 
+def _filter_cast_variants(text):
+    """CAST-KOMPATIBEL VARIANTFILTRERING (2026-08-27):
+    Mastern far bara varianter TV:ns avkodare/DMR klarar:
+    - HEVC (hvc1./hev1./VIDEO-RANGE=PQ) tas ALLTID bort (4K HDR).
+    - 4K (hojd > 1080) tas alltid bort.
+    - 1080p (hojd > 720) tas bort OM det finns en lagre variant (720p/360p,
+      H.264 Level <=3.2) - annars behalls den som fallback.
+    Baserat pa fysiska tester: MP4 + Apple-HLS (Level 3.2/4.2) spelar pa
+    Panasonic TX-65HX702E; moviebox 1080p (High@Level 5.0) + 4K-HEVC failar."""
+    lines = text.splitlines()
+    kept_low = False
+    for l in lines:
+        if l.startswith("#EXT-X-STREAM-INF") and "RESOLUTION=" in l:
+            m = re.search(r"RESOLUTION=\d+x(\d+)", l)
+            if m and 0 < int(m.group(1)) <= 720:
+                kept_low = True
+                break
+    out = []
+    i = 0
+    while i < len(lines):
+        l = lines[i]
+        if l.startswith("#EXT-X-STREAM-INF"):
+            m = re.search(r"RESOLUTION=(\d+)x(\d+)", l)
+            h = int(m.group(2)) if m else 0
+            hevc = "hvc1." in l or "hev1." in l or "VIDEO-RANGE=PQ" in l
+            drop = hevc or h > 1080 or (h > 720 and kept_low)
+            if drop:
+                i += 1
+                # hoppa over ev. kommentar (# 4K HDR etc.) + variant-URI:n
+                while i < len(lines) and lines[i].startswith("#") \
+                        and not lines[i].startswith("#EXT-X"):
+                    i += 1
+                if i < len(lines) and lines[i] and not lines[i].startswith("#"):
+                    i += 1
+                continue
+        out.append(l)
+        i += 1
+    return "\n".join(out)
+
+
 @app.route("/diag-mode")
 def diag_mode():
     """Vaxlar diagnostiskt master-lage (A/B/C/OFF) - ingen redeploy behovs.
@@ -757,6 +797,11 @@ def cast_proxy(url):
         mode = DIAG_MODE["mode"]
         if mode in ("A", "B", "C", "D") and "#EXT-X-STREAM-INF" in text:
             out = diag_master_rewrite(out, "C" if mode == "D" else mode)
+            return Response(out, content_type="application/x-mpegURL")
+        # CAST-FIX (2026-08-27): filtera bort varianter TV:n inte klarar
+        # (HEVC/4K alltid, 1080p om lagre finns) - ALLTID for cast-proxy.
+        if "#EXT-X-STREAM-INF" in text:
+            out = _filter_cast_variants(out)
             return Response(out, content_type="application/x-mpegURL")
         return Response(out, content_type="application/vnd.apple.mpegurl")
     # Inte ett manifest (segment/init): sniffa fMP4 -> video/mp4 (annars
