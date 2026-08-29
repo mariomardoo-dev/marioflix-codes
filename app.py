@@ -216,7 +216,8 @@ def login_gate():
     """Inloggning framfor allt (som mobilen): streamingsidan kraver kod."""
     p = request.path
     # alltid oppet: inloggningssidan, admin, nedladdningar, video-streams
-    if p.startswith("/static/") or p.startswith("/vproxy/") or p.startswith("/cast-proxy/"):
+    if p.startswith("/static/") or p.startswith("/vproxy/") or p.startswith("/cast-proxy/") \
+            or p.startswith("/vtt"):
         return None
     if p in ("/check", "/admin", "/codes-raw", "/apk", "/apk-nya", "/apk-tv", "/apk-tvtest", "/nya-version", "/sw.js", "/manifest.json", "/download-tv", "/favicon.ico", "/account-info", "/logout", "/status", "/diag-mode"):
         return None
