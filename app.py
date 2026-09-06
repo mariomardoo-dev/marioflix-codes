@@ -360,7 +360,7 @@ def account_info():
     code, device = c.split("|", 1)
     # TILLFÄLLIG DIAGNOSTIK: logga koden sa vi kan identifiera aktiv streamer
     ua = request.headers.get("User-Agent", "")[:60]
-    app.logger.info("ACCOUNT-INFO code=%s device=%s ua=%s", code, device, ua)
+    print("ACCOUNT-INFO code=" + code + " device=" + device + " ua=" + ua, flush=True)
     codes, used, _notes = load_data()
     if used.get(code) == device:
         return jsonify({"ok": True, "code": code})
