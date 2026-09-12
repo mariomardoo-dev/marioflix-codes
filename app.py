@@ -782,10 +782,12 @@ def cast_proxy(url):
         return _cast_resp("Streamfel", "text/plain; charset=utf-8", 502)
     # DIAGNOSTIK (2026-09-12): vad svarar upstreamen EGENTLIGEN? Bara loggning -
     # ingen logik andras. (Grundorsaken till moviebox-404:orna utreds.)
-    app.logger.info("CASTPROXY-UP url=%s status=%s CT=%s CL=%s",
-                    url[:200], upstream.status_code,
-                    upstream.headers.get("Content-Type"),
-                    upstream.headers.get("Content-Length"))
+    # OBS: app.logger.info filtreras bort pa Render (Flask-logger = WARNING) ->
+    # skriv till stdout, samma strom som access-loggen.
+    print("CASTPROXY-UP url=%s status=%s CT=%s CL=%s" % (
+        url[:200], upstream.status_code,
+        upstream.headers.get("Content-Type"),
+        upstream.headers.get("Content-Length")), flush=True)
     if upstream.status_code != 200:
         return _cast_resp("Streamfel", "text/plain; charset=utf-8", upstream.status_code)
     body = upstream.content
