@@ -898,16 +898,67 @@ def nya_version():
         return "1", 200
 
 
-# ---- VTT-HOST (3.8.2): minimal, ISOLERAD route for konverterade undertexter.
-# Telefonen POSTar WebVTT (cast.js SRT->VTT) och far en vanlig https-URL som
-# Default Media Receiver kan hamta (data:-URL:er accepteras inte - fysiskt
-# bevisat). Ror INTE cast-proxy/CORS-fixen/HLS-normaliseringen - egen store.
-VTT_STORE = {}   # id -> (expires, text)
+# ---- VTT-HOST (3.8.2, utokad 3.8.4): konverterade undertexter till DMR.
+# TV:n (Default Media Receiver) renderar BARA WebVTT - aldrig SRT - och
+# data:-URL:er accepteras inte (fysiskt bevisat). Tva vagar in:
+#   POST /vtt            -> telefonen skickar fardig VTT, far en https-URL (3.8.2)
+#   GET  /vtt?src=<url>  -> servern hamtar SRT:en, konverterar + cachar (3.8.4)
+# Med GET-vagen kan ALLA sprak vara riktiga MediaTrack:er (text/vtt) utan att
+# telefonen maste konvertera 40+ sprak (OOM) - den skickar bara sma URL:er.
+# Ror INTE cast-proxy/CORS-fixen/HLS-normaliseringen - egen store.
+VTT_STORE = {}       # id -> (expires, text)        (POST-vagen)
+VTT_SRC = {}         # src-url -> (expires, text)   (GET-vagen, cachas per kall-url)
 VTT_TTL = 3600
+VTT_SRC_TTL = 6 * 3600
+VTT_SRC_MAX = 300    # tak mot obegransad minnesvaxt
 
 
-@app.route("/vtt", methods=["POST"])
+def _srt_to_vtt(text):
+    """SRT -> WebVTT (BOM bort, CRLF->LF, komma->punkt i tidsstamplar).
+    Redan VTT passerar oforandrad."""
+    t = (text or "").replace("﻿", "")
+    t = t.replace(chr(13) + chr(10), chr(10)).replace(chr(13), chr(10))
+    if t.lstrip().startswith("WEBVTT"):
+        return t
+    t = re.sub(r"(\d{2}:\d{2}:\d{2}),(\d{1,3})", r"\1.\2", t)
+    return "WEBVTT\n\n" + t
+
+
+def _vtt_resp(text):
+    r = Response(text, content_type="text/vtt; charset=utf-8")
+    r.headers["Access-Control-Allow-Origin"] = "*"   # DMR (gstatic) maste lasa
+    r.headers["Cache-Control"] = "no-store"
+    return r
+
+
+@app.route("/vtt", methods=["GET", "POST"])
 def vtt_upload():
+    # --- GET ?src=<srt-url>: hamta, konvertera, cacha, servera ---
+    if request.method == "GET":
+        src = request.args.get("src", "").strip()
+        if not src.startswith("http"):
+            return "ingen src", 400
+        hit = VTT_SRC.get(src)
+        if hit and hit[0] > time.time():
+            return _vtt_resp(hit[1])
+        try:
+            up = requests.get(src, timeout=30,
+                              headers={"User-Agent": UA,
+                                       "Referer": "https://cinejoy.to/"},
+                              allow_redirects=True)
+        except Exception:
+            return "kallan svarade inte", 502
+        if up.status_code != 200:
+            return "kallan svarade " + str(up.status_code), 502
+        vtt = _srt_to_vtt(up.content.decode("utf-8", errors="replace"))
+        if len(VTT_SRC) >= VTT_SRC_MAX:
+            for k in list(VTT_SRC)[:50]:      # släng äldsta 50 vid tak
+                VTT_SRC.pop(k, None)
+        VTT_SRC[src] = (time.time() + VTT_SRC_TTL, vtt)
+        print("VTT-SRC url=%s status=%s bytes=%s" % (src[:160], up.status_code, len(vtt)),
+              flush=True)
+        return _vtt_resp(vtt)
+    # --- POST: telefonen skickar fardig VTT (3.8.2, oforandrad vag) ---
     try:
         body = request.get_data()
         if len(body) > 1_000_000:      # OOM-skydd (max ~1 MB)
@@ -931,10 +982,7 @@ def vtt_get(vid):
     if time.time() > exp:
         VTT_STORE.pop(vid, None)
         return "borta", 404
-    r = Response(text, content_type="text/vtt; charset=utf-8")
-    r.headers["Access-Control-Allow-Origin"] = "*"   # DMR (gstatic) maste lasa
-    r.headers["Cache-Control"] = "no-store"
-    return r
+    return _vtt_resp(text)
 
 
 @app.route("/apk-nya")
