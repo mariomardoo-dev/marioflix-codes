@@ -777,7 +777,9 @@ def cast_proxy(url):
                     request.headers.get("User-Agent", "-")[:120])
     try:
         upstream = requests.get(url, timeout=30,
-                                headers={"User-Agent": UA}, stream=True, allow_redirects=True)
+                                headers={"User-Agent": UA,
+                                         "Referer": "https://cinejoy.to/"},
+                                stream=True, allow_redirects=True)
     except Exception:
         return _cast_resp("Streamfel", "text/plain; charset=utf-8", 502)
     # DIAGNOSTIK (2026-09-12): vad svarar upstreamen EGENTLIGEN? Bara loggning -
